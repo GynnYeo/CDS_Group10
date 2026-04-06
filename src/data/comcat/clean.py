@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-from src.utils.paths import COMCAT_RAW_DIR, COMCAT_INTERIM_DIR
+from src.utils.paths import RAW_COMCAT_DIR, INTERIM_COMCAT_DIR
 
 
 def _log_step(
@@ -24,9 +24,10 @@ def _log_step(
 
 def clean_comcat_events(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Clean a raw ComCat dataframe and return:
-    1. cleaned dataframe
-    2. cleaning log dataframe
+    Clean a raw ComCat dataframe for downstream trigger and label construction.
+
+    The v2 project keeps this module intentionally generic so it can be reused
+    across trigger construction, label generation, and optional enrichments.
     """
     comcat_df_clean = df.copy()
     cleaning_log: list[dict] = []
@@ -102,14 +103,14 @@ def clean_comcat_events(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         len(comcat_df_clean),
     )
 
-    # 5. basic target-related magnitude filter
+    # 5. Keep only events with a usable magnitude for downstream tasks.
     rows_before = len(comcat_df_clean)
     comcat_df_clean = comcat_df_clean.loc[
-        comcat_df_clean["magnitude"] >= 2.5
+        comcat_df_clean["magnitude"].notna()
     ].copy()
     _log_step(
         cleaning_log,
-        "Keep magnitude >= 2.5",
+        "Keep rows with non-null magnitude",
         rows_before,
         len(comcat_df_clean),
     )
@@ -144,8 +145,8 @@ def load_and_clean_comcat(
 
 def save_clean_comcat(
     input_path: str | Path,
-    output_path: str | Path = COMCAT_INTERIM_DIR / "comcat_clean_events.parquet",
-    log_output_path: str | Path | None = COMCAT_INTERIM_DIR / "comcat_cleaning_log.csv",
+    output_path: str | Path = INTERIM_COMCAT_DIR / "comcat_clean_events.parquet",
+    log_output_path: str | Path | None = INTERIM_COMCAT_DIR / "comcat_cleaning_log.csv",
     force_recompute: bool = False,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -190,9 +191,9 @@ def save_clean_comcat(
 
 if __name__ == "__main__":
     df_clean, cleaning_log_df = save_clean_comcat(
-        input_path=COMCAT_RAW_DIR / "comcat_2025.parquet",
-        output_path=COMCAT_INTERIM_DIR / "comcat_clean_events_2025.parquet",
-        log_output_path=COMCAT_INTERIM_DIR / "comcat_cleaning_log_2025.csv",
+        input_path=RAW_COMCAT_DIR / "comcat_2025.parquet",
+        output_path=INTERIM_COMCAT_DIR / "comcat_clean_events_2025.parquet",
+        log_output_path=INTERIM_COMCAT_DIR / "comcat_cleaning_log_2025.csv",
         force_recompute=False,
         verbose=True,
     )

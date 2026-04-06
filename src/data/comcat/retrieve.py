@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, date
 from pathlib import Path
 from typing import Iterator
-from src.utils.paths import COMCAT_RAW_DIR
+from src.utils.paths import RAW_COMCAT_DIR
 
 import requests
 
@@ -14,7 +14,7 @@ import requests
 BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 DEFAULT_TIMEOUT = 60
 DEFAULT_LIMIT = 20_000
-
+MAX_PAGES_PER_CHUNK = 1000
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class ComCatRequestConfig:
     timeout: int = DEFAULT_TIMEOUT
 
 
-def fetch_comcat_chunk(
+def fetch_comcat_page(
     starttime: str,
     endtime: str,
     config: ComCatRequestConfig | None = None,
@@ -34,7 +34,7 @@ def fetch_comcat_chunk(
     session: requests.Session | None = None,
 ) -> dict:
     """
-    Fetch one chunk of ComCat event data as GeoJSON.
+    Fetch one ComCat API page as GeoJSON.
 
     Parameters
     ----------
@@ -71,6 +71,74 @@ def fetch_comcat_chunk(
     response = http.get(BASE_URL, params=params, timeout=config.timeout)
     response.raise_for_status()
     return response.json()
+
+
+def fetch_comcat_chunk(
+    starttime: str,
+    endtime: str,
+    config: ComCatRequestConfig | None = None,
+    session: requests.Session | None = None,
+    verbose: bool = True,
+) -> dict:
+    """
+    Fetch a complete ComCat time chunk with pagination protection.
+
+    This guards against silent truncation when the number of events in a chunk
+    exceeds the per-request `limit`.
+    """
+    config = config or ComCatRequestConfig()
+    all_features: list[dict] = []
+    combined_metadata: dict = {}
+
+    for page_number in range(1, MAX_PAGES_PER_CHUNK + 1):
+        offset = 1 + (page_number - 1) * config.limit
+        page = fetch_comcat_page(
+            starttime=starttime,
+            endtime=endtime,
+            config=config,
+            offset=offset,
+            session=session,
+        )
+
+        metadata = page.get("metadata", {})
+        page_features = page.get("features", [])
+        combined_metadata = metadata
+        all_features.extend(page_features)
+
+        if verbose:
+            expected = metadata.get("count")
+            print(
+                f"[PAGE] {starttime} to {endtime} "
+                f"page={page_number} offset={offset} "
+                f"retrieved={len(page_features):,} total_so_far={len(all_features):,} "
+                f"expected={expected if expected is not None else 'unknown'}"
+            )
+
+        if len(page_features) < config.limit:
+            break
+    else:
+        raise RuntimeError(
+            f"Exceeded pagination guard ({MAX_PAGES_PER_CHUNK} pages) for "
+            f"{starttime} to {endtime}. Narrow the chunk or inspect the query."
+        )
+
+    expected_count = combined_metadata.get("count")
+    if expected_count is not None and len(all_features) < int(expected_count):
+        raise RuntimeError(
+            f"Incomplete ComCat retrieval for {starttime} to {endtime}: "
+            f"retrieved {len(all_features):,} of expected {int(expected_count):,} events."
+        )
+
+    return {
+        "type": "FeatureCollection",
+        "metadata": {
+            **combined_metadata,
+            "retrieved_count": len(all_features),
+            "page_limit": config.limit,
+            "paginated": True,
+        },
+        "features": all_features,
+    }
 
 
 def save_raw_geojson(data: dict, filepath: Path) -> None:
@@ -184,6 +252,7 @@ def download_comcat_range(
                 endtime=chunk_end,
                 config=config,
                 session=session,
+                verbose=verbose,
             )
             save_raw_geojson(data, filepath)
 
@@ -200,7 +269,7 @@ if __name__ == "__main__":
     download_comcat_range(
         start_date="2015-01-01",
         end_date="2025-12-31",
-        output_dir=COMCAT_RAW_DIR,
+        output_dir=RAW_COMCAT_DIR,
         config=config,
         refresh=False,
         verbose=True,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.utils.paths import COMCAT_RAW_DIR
+from src.utils.paths import RAW_COMCAT_DIR
 
 
 RECOMMENDED_COLUMNS = [
@@ -123,7 +123,7 @@ def build_comcat_filepath(root_dir: str | Path, year: int, month: int) -> Path:
 def load_comcat_date_range(
     start_date: str,
     end_date: str,
-    root_dir: str | Path = COMCAT_RAW_DIR,
+    root_dir: str | Path = RAW_COMCAT_DIR,
     skip_missing: bool = True,
     verbose: bool = True,
 ) -> pd.DataFrame:
@@ -166,8 +166,8 @@ def load_comcat_date_range(
 def build_and_save_raw_comcat_dataset(
     start_date: str,
     end_date: str,
-    root_dir: str | Path = COMCAT_RAW_DIR,
-    output_path: str | Path = COMCAT_RAW_DIR / "comcat.parquet",
+    root_dir: str | Path = RAW_COMCAT_DIR,
+    output_path: str | Path = RAW_COMCAT_DIR / "comcat.parquet",
     skip_missing: bool = True,
     verbose: bool = True,
 ) -> pd.DataFrame:
@@ -203,8 +203,8 @@ if __name__ == "__main__":
     df = build_and_save_raw_comcat_dataset(
         start_date="2025-01-01",
         end_date="2025-12-31",
-        root_dir=COMCAT_RAW_DIR,
-        output_path=COMCAT_RAW_DIR / "comcat_2025.parquet",
+        root_dir=RAW_COMCAT_DIR,
+        output_path=RAW_COMCAT_DIR / "comcat_2025.parquet",
         skip_missing=True,
         verbose=True,
     )
