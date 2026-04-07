@@ -103,7 +103,9 @@ def _build_match_proposals(comcat_df: pd.DataFrame, gcmt_df: pd.DataFrame) -> pd
     if searchable.empty or gcmt_df.empty:
         return pd.DataFrame()
 
-    comcat_time_ns = searchable["time"].astype("int64").to_numpy()
+    # Use Timestamp.value so both sides of the fuzzy-match window are in nanoseconds
+    # even if pandas stores one timezone-aware column at microsecond resolution.
+    comcat_time_ns = searchable["time"].map(lambda ts: ts.value).to_numpy(dtype="int64")
     gcmt_iter = gcmt_df.dropna(
         subset=["gcmt_time", "gcmt_latitude", "gcmt_longitude", "gcmt_magnitude"]
     ).reset_index().rename(columns={"index": "gcmt_index"})

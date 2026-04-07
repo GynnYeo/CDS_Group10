@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-from src.utils.io import save_dataframe
+from src.utils.io import load_dataframe, save_dataframe
 from src.utils.paths import INTERIM_MOMENT_TENSOR_DIR
 
 
@@ -136,8 +136,26 @@ def save_clean_moment_tensor(
     df: pd.DataFrame,
     output_path: str | Path = INTERIM_MOMENT_TENSOR_DIR / "moment_tensor_clean.parquet",
     log_output_path: str | Path = INTERIM_MOMENT_TENSOR_DIR / "moment_tensor_cleaning_log.csv",
+    force_recompute: bool = False,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Clean optional GCMT data and save the cleaned table plus cleaning log.
+
+    The cache behavior mirrors the ComCat cleaner so the shared dataset runner
+    can reuse prior outputs when `force_recompute` is disabled.
+    """
+    output_path = Path(output_path)
+    log_output_path = Path(log_output_path)
+
+    if output_path.exists() and not force_recompute:
+        if verbose:
+            print(f"[LOAD EXISTING] {output_path}")
+
+        cleaned = load_dataframe(output_path)
+        log_df = load_dataframe(log_output_path) if log_output_path.exists() else pd.DataFrame()
+        return cleaned, log_df
+
     cleaned, log_df = clean_moment_tensor(df)
     save_dataframe(cleaned, output_path)
     save_dataframe(log_df, log_output_path)

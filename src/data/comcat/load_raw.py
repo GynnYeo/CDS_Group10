@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.utils.io import load_dataframe
 from src.utils.paths import RAW_COMCAT_DIR
 
 
@@ -26,6 +27,27 @@ RECOMMENDED_COLUMNS = [
     "rms",
     "nst",
 ]
+
+SUPPORTED_COMCAT_FILE_SUFFIXES = {".parquet", ".csv", ".geojson"}
+
+
+def _ensure_recommended_columns(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    for column in RECOMMENDED_COLUMNS:
+        if column not in result.columns:
+            result[column] = pd.NA
+    return result
+
+
+def _normalize_loaded_comcat_frame(df: pd.DataFrame) -> pd.DataFrame:
+    result = _ensure_recommended_columns(df)
+
+    for column in ("time", "updated"):
+        if column in result.columns:
+            result[column] = pd.to_datetime(result[column], utc=True, errors="coerce")
+
+    result = result[RECOMMENDED_COLUMNS]
+    return result.sort_values("time").reset_index(drop=True)
 
 
 def comcat_geojson_to_dataframe(filepath: str | Path) -> pd.DataFrame:
@@ -78,9 +100,60 @@ def comcat_geojson_to_dataframe(filepath: str | Path) -> pd.DataFrame:
     df["updated"] = pd.to_datetime(df["updated"], unit="ms", utc=True, errors="coerce")
 
     df = df[RECOMMENDED_COLUMNS]
-    df = df.sort_values("time").reset_index(drop=True)
+    return df.sort_values("time").reset_index(drop=True)
 
-    return df
+
+def _load_single_comcat_file(path: Path) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix == ".geojson":
+        return comcat_geojson_to_dataframe(path)
+    if suffix in {".csv", ".parquet"}:
+        return _normalize_loaded_comcat_frame(load_dataframe(path))
+    raise ValueError(f"Unsupported ComCat file type: {path}")
+
+
+def _collect_comcat_files(path: Path) -> list[Path]:
+    if path.is_file() and path.suffix.lower() in SUPPORTED_COMCAT_FILE_SUFFIXES:
+        return [path]
+
+    if path.is_dir():
+        files = [candidate for candidate in sorted(path.rglob("*")) if candidate.is_file()]
+        return [candidate for candidate in files if candidate.suffix.lower() in SUPPORTED_COMCAT_FILE_SUFFIXES]
+
+    return []
+
+
+def load_raw_comcat(path: str | Path, verbose: bool = True) -> pd.DataFrame:
+    """
+    Load raw ComCat data from a GeoJSON/CSV/Parquet file or a directory of
+    supported raw ComCat files.
+    """
+    path = Path(path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"ComCat input does not exist: {path}")
+
+    comcat_files = _collect_comcat_files(path)
+    if not comcat_files:
+        raise ValueError(f"No supported ComCat files found at {path}")
+
+    if verbose:
+        if path.is_dir():
+            print(f"[LOAD] ComCat directory -> {path} ({len(comcat_files)} files)")
+        else:
+            print(f"[LOAD] ComCat file -> {path}")
+
+    frames = [_load_single_comcat_file(comcat_path) for comcat_path in comcat_files]
+    if not frames:
+        return pd.DataFrame(columns=RECOMMENDED_COLUMNS)
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = _normalize_loaded_comcat_frame(combined)
+
+    if verbose and path.is_dir():
+        print(f"[DONE] Combined raw ComCat rows: {len(combined):,}")
+
+    return combined
 
 
 def month_start(dt: datetime) -> datetime:
@@ -158,9 +231,7 @@ def load_comcat_date_range(
     end_ts = pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)
 
     df = df[(df["time"] >= start_ts) & (df["time"] < end_ts)].copy()
-    df = df.sort_values("time").reset_index(drop=True)
-
-    return df
+    return df.sort_values("time").reset_index(drop=True)
 
 
 def build_and_save_raw_comcat_dataset(

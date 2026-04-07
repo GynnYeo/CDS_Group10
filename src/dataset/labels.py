@@ -17,6 +17,13 @@ def _label_single_trigger(
     aftershock_max_radius_km: float,
     horizons_hours: tuple[int, ...],
 ) -> dict:
+    """
+    Label one trigger using the project aftershock definition.
+
+    Aftershocks are future earthquakes that satisfy the shared magnitude,
+    distance, and time-horizon rules. They are not required to share the same
+    catalog event ID as the trigger.
+    """
     trigger_time = trigger["trigger_time"]
     max_horizon_hours = max(horizons_hours)
     candidate_events = events_df.loc[

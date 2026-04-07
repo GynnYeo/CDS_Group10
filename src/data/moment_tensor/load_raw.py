@@ -213,7 +213,7 @@ def parse_ndk_record(block: list[str], source_file: str | None = None) -> dict:
     return row
 
 
-def parse_ndk_file(path: str | Path, verbose: bool = True) -> pd.DataFrame:
+def parse_ndk_file(path: str | Path, verbose: bool = False) -> pd.DataFrame:
     path = Path(path)
 
     if verbose:
@@ -245,19 +245,29 @@ def load_raw_moment_tensor(path: str | Path, verbose: bool = True) -> pd.DataFra
 
     if path.suffix.lower() in {".csv", ".parquet"}:
         if verbose:
-            print(f"[LOAD] {path}")
+            print(f"[LOAD] Moment tensor file -> {path}")
         return load_dataframe(path)
 
     ndk_files = _collect_ndk_files(path)
     if not ndk_files:
         raise ValueError(f"No supported moment tensor files found at {path}")
 
-    frames = [parse_ndk_file(ndk_path, verbose=verbose) for ndk_path in ndk_files]
+    if verbose:
+        if path.is_dir():
+            print(f"[LOAD] Moment tensor directory -> {path} ({len(ndk_files)} NDK files)")
+        else:
+            print(f"[LOAD] Moment tensor file -> {path}")
+
+    frames = [parse_ndk_file(ndk_path, verbose=False) for ndk_path in ndk_files]
     if not frames:
         return pd.DataFrame()
 
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values("gcmt_time").reset_index(drop=True)
+
+    if verbose:
+        print(f"[DONE] Loaded raw moment tensor rows: {len(df):,}")
+
     return df
 
 

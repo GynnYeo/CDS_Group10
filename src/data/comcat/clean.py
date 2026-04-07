@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
+from src.data.comcat.load_raw import load_raw_comcat
 from src.utils.paths import RAW_COMCAT_DIR, INTERIM_COMCAT_DIR
 
 
@@ -127,14 +128,10 @@ def load_and_clean_comcat(
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Load a raw ComCat parquet file and clean it.
+    Load raw ComCat data from a supported file or directory and clean it.
     """
     input_path = Path(input_path)
-
-    if verbose:
-        print(f"[LOAD] {input_path}")
-
-    df_raw = pd.read_parquet(input_path)
+    df_raw = load_raw_comcat(input_path, verbose=verbose)
     df_clean, cleaning_log_df = clean_comcat_events(df_raw)
 
     if verbose:
