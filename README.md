@@ -54,7 +54,24 @@ Not yet implemented:
 
 This repository should be used in two main stages:
 
-### 1. Build the processed dataset
+## Official Workflow
+
+This repository should be used in three main stages:
+
+### 1. Download raw data
+
+For first-time setup, run:
+
+```bash
+python scripts/download_raw_data.py
+```
+This step:
+- checks whether raw ComCat data already exists under data/raw/comcat
+- checks whether raw GCMT data already exists under data/raw/moment_tensor
+- downloads missing raw data only
+- skips downloading if the required raw files are already present
+
+### 2. Build the processed dataset
 
 Run the shared preprocessing pipeline first.
 
@@ -77,7 +94,7 @@ This step:
 * assigns train / val / test splits
 * saves reusable outputs under `data/processed/`
 
-### 2. Run and save baselines
+### 3. Run and save baselines
 
 After the processed dataset exists, run:
 
@@ -98,7 +115,7 @@ reports/metrics/baselines_predictions.csv
 reports/metrics/baselines_metrics.csv
 ```
 
-### 3. Future model training
+### 4. Future model training
 
 Future AI model scripts should also operate on the saved processed dataset under `data/processed/`.
 
@@ -236,11 +253,11 @@ These operate on processed outputs under `data/processed/` and do not modify the
 ## Project Layout
 
 ```text
-src/data/              source-level loading, cleaning, enrichment
+src/data/              source-level loading, cleaning, enrichment, download helpers
 src/dataset/           trigger-level shared dataset construction
 src/models/            model input utilities, baselines, model runners
 src/evaluation/        shared evaluation and prediction validation helpers
-scripts/               official runnable entrypoints
+scripts/               official runnable entrypoints (download, baselines, future model runs)
 data/raw/              raw source inputs
 data/interim/          saved intermediate pipeline artifacts
 data/processed/        final datasets and split-specific outputs
