@@ -20,6 +20,13 @@ from src.models.run_baselines import (
     run_climatology_baseline,
     run_rj_baseline,
 )
+from src.models.run_task3 import (
+    evaluate_task3_predictions,
+    run_task3_pipeline,
+)
+from src.models.task3_labels import build_or_load_large_aftershock_labels
+from src.models.task3_rj import SimplifiedTask3RJBaseline
+from src.models.task3_xgb import Task3BinaryModel
 
 __all__ = [
     "ClimatologyBaseline",
@@ -39,4 +46,9 @@ __all__ = [
     "run_all_baselines",
     "run_climatology_baseline",
     "run_rj_baseline",
+    "build_or_load_large_aftershock_labels",
+    "evaluate_task3_predictions",
+    "run_task3_pipeline",
+    "SimplifiedTask3RJBaseline",
+    "Task3BinaryModel",
 ]
