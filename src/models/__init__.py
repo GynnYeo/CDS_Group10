@@ -20,13 +20,20 @@ from src.models.run_baselines import (
     run_climatology_baseline,
     run_rj_baseline,
 )
-from src.models.run_task3 import (
+from src.models.task3_maxmag.baselines import BathsLawBaseline, MeanMaxMagnitudeBaseline
+from src.models.task3_maxmag.labels import build_or_load_max_aftershock_magnitude_labels
+from src.models.task3_maxmag.run import (
+    evaluate_task3_maxmag_predictions,
+    run_task3_maxmag_pipeline,
+)
+from src.models.task3_maxmag.xgb import Task3MaxMagRegressor
+from src.models.task3_prob.labels import build_or_load_large_aftershock_labels
+from src.models.task3_prob.rj import SimplifiedTask3RJBaseline
+from src.models.task3_prob.run import (
     evaluate_task3_predictions,
     run_task3_pipeline,
 )
-from src.models.task3_labels import build_or_load_large_aftershock_labels
-from src.models.task3_rj import SimplifiedTask3RJBaseline
-from src.models.task3_xgb import Task3BinaryModel
+from src.models.task3_prob.xgb import Task3BinaryModel
 
 __all__ = [
     "ClimatologyBaseline",
@@ -47,8 +54,14 @@ __all__ = [
     "run_climatology_baseline",
     "run_rj_baseline",
     "build_or_load_large_aftershock_labels",
+    "build_or_load_max_aftershock_magnitude_labels",
+    "BathsLawBaseline",
     "evaluate_task3_predictions",
+    "evaluate_task3_maxmag_predictions",
+    "MeanMaxMagnitudeBaseline",
     "run_task3_pipeline",
+    "run_task3_maxmag_pipeline",
+    "Task3MaxMagRegressor",
     "SimplifiedTask3RJBaseline",
     "Task3BinaryModel",
 ]

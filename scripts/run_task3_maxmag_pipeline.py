@@ -1,4 +1,4 @@
-"""Run the task-3 larger-aftershock pipeline and save outputs."""
+"""Run the task-3 max-aftershock-magnitude pipeline and save outputs."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.models.task3_prob.run import run_task3_pipeline, save_task3_outputs
+from src.models.task3_maxmag.run import (
+    run_task3_maxmag_pipeline,
+    save_task3_maxmag_outputs,
+)
 from src.utils.paths import METRICS_DIR
 
 
@@ -20,7 +23,7 @@ DEFAULT_DATASET_NAME = "earthquake_aftershock_v2_gcmt"
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run task 3: larger-aftershock probability modeling pipeline.",
+        description="Run task 3 max-aftershock-magnitude modeling pipeline.",
     )
     parser.add_argument(
         "--dataset-name",
@@ -28,21 +31,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Processed dataset name to load from data/processed/.",
     )
     parser.add_argument(
-        "--magnitude-threshold",
+        "--min-aftershock-magnitude",
         type=float,
-        default=4.0,
-        help="Aftershock magnitude threshold for the larger-aftershock target.",
+        default=2.5,
+        help="Minimum aftershock magnitude used when building max-magnitude labels.",
     )
     parser.add_argument(
         "--backend",
-        choices=("auto", "xgboost", "hist_gb"),
+        choices=("auto", "xgboost", "gb_reg"),
         default="auto",
         help="Model backend. 'auto' prefers xgboost when available.",
     )
     parser.add_argument(
+        "--tune-xgboost",
+        action="store_true",
+        help="Run a small validation-based hyperparameter search for the XGBoost regressor.",
+    )
+    parser.add_argument(
         "--force-recompute-labels",
         action="store_true",
-        help="Rebuild cached task-3 sidecar labels from interim artifacts.",
+        help="Rebuild cached task-3 max-magnitude labels from interim artifacts.",
     )
     parser.add_argument(
         "--quiet",
@@ -55,26 +63,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
+    magnitude_slug = str(args.min_aftershock_magnitude).replace(".", "_")
+    predictions_path = METRICS_DIR / f"task3_maxmag_predictions_m{magnitude_slug}.csv"
+    metrics_path = METRICS_DIR / f"task3_maxmag_metrics_m{magnitude_slug}.csv"
+    metadata_path = METRICS_DIR / f"task3_maxmag_hparams_m{magnitude_slug}.json"
 
-    threshold_slug = str(args.magnitude_threshold).replace(".", "_")
-    predictions_path = METRICS_DIR / f"task3_large_aftershock_predictions_m{threshold_slug}.csv"
-    metrics_path = METRICS_DIR / f"task3_large_aftershock_metrics_m{threshold_slug}.csv"
-
-    predictions_df, metrics_df = run_task3_pipeline(
+    predictions_df, metrics_df, metadata = run_task3_maxmag_pipeline(
         dataset_name=args.dataset_name,
-        magnitude_threshold=args.magnitude_threshold,
+        min_aftershock_magnitude=args.min_aftershock_magnitude,
         backend=args.backend,
+        tune_xgboost=args.tune_xgboost,
         force_recompute_labels=args.force_recompute_labels,
         verbose=not args.quiet,
     )
 
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
-    save_task3_outputs(predictions_df, metrics_df, predictions_path, metrics_path)
+    save_task3_maxmag_outputs(
+        predictions_df,
+        metrics_df,
+        predictions_path,
+        metrics_path,
+        metadata_path=metadata_path,
+        metadata=metadata,
+    )
 
     print(f"Dataset: {args.dataset_name}")
-    print(f"Magnitude threshold: M >= {args.magnitude_threshold}")
+    print(f"Min aftershock magnitude: M >= {args.min_aftershock_magnitude}")
     print(f"Predictions saved to: {predictions_path}")
     print(f"Metrics saved to: {metrics_path}")
+    print(f"Hyperparameters saved to: {metadata_path}")
     print(f"Prediction rows saved: {len(predictions_df)}")
     print(f"Metric rows saved: {len(metrics_df)}")
 

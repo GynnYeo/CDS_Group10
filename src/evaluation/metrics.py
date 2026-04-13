@@ -45,10 +45,12 @@ def evaluate_count_predictions(
     """Evaluate count predictions with simple regression metrics."""
     y_true_arr = _as_numpy(y_true).astype(float)
     y_pred_arr = _as_numpy(y_pred).astype(float)
+    errors = y_pred_arr - y_true_arr
 
     return {
         "mae": float(mean_absolute_error(y_true_arr, y_pred_arr)),
         "rmse": float(np.sqrt(mean_squared_error(y_true_arr, y_pred_arr))),
+        "bias": float(np.mean(errors)),
         "n_obs": int(len(y_true_arr)),
         "mean_true": float(np.mean(y_true_arr)),
         "mean_pred": float(np.mean(y_pred_arr)),
