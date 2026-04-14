@@ -79,7 +79,24 @@ Run the shared preprocessing pipeline first.
 python -m src.dataset.build_dataset \
   --comcat-input data/raw/comcat \
   --moment-tensor-input data/raw/moment_tensor \
-  --dataset-name earthquake_aftershock_v2_gcmt
+  --dataset-name earthquake_aftershock_v2_gcmt \
+  --train-start-year 2010 \
+  --train-end-year 2022 \
+  --validation-year 2023 \
+  --test-years 2024 2025
+```
+
+If you need to recompute the dataset (e.g. after updating raw data or split definitions), run:
+```bash
+python -m src.dataset.build_dataset \
+  --comcat-input data/raw/comcat \
+  --moment-tensor-input data/raw/moment_tensor \
+  --dataset-name earthquake_aftershock_v2_gcmt \
+  --train-start-year 2010 \
+  --train-end-year 2022 \
+  --validation-year 2023 \
+  --test-years 2024 2025 \
+  --force-recompute
 ```
 
 This step:

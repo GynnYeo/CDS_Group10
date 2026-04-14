@@ -109,6 +109,10 @@ def build_v2_dataset(
     comcat_input_path: str | Path,
     moment_tensor_input_path: str | Path | None = None,
     dataset_name: str = DEFAULT_DATASET_NAME,
+    train_start_year: int = 2010,
+    train_end_year: int = 2022,
+    validation_years: tuple[int, ...] = (2023,),
+    test_years: tuple[int, ...] = (2024, 2025),
     force_recompute: bool = False,
     verbose: bool = True,
 ) -> pd.DataFrame:
@@ -191,7 +195,13 @@ def build_v2_dataset(
         labels_df=labels_df,
         features_df=features_df,
     )
-    final_df = assign_data_split(final_df)
+    final_df = assign_data_split(
+        final_df,
+        train_start_year=train_start_year,
+        train_end_year=train_end_year,
+        validation_years=validation_years,
+        test_years=test_years,
+    )
     save_dataframe(final_df, output_paths["final_dataset"])
     _log(verbose, f"[SAVE] Final dataset -> {output_paths['final_dataset']}")
 
@@ -236,6 +246,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reduce logging output.",
     )
+    parser.add_argument(
+        "--train-start-year",
+        type=int,
+        default=2010,
+        help="First training year (inclusive).",
+    )
+    parser.add_argument(
+        "--train-end-year",
+        type=int,
+        default=2022,
+        help="Last training year (inclusive).",
+    )
+    parser.add_argument(
+        "--validation-year",
+        type=int,
+        default=2023,
+        help="Validation year.",
+    )
+    parser.add_argument(
+        "--test-years",
+        type=int,
+        nargs="+",
+        default=[2024, 2025],
+        help="One or more test years.",
+    )
     return parser
 
 
@@ -250,6 +285,10 @@ def main() -> None:
         comcat_input_path=args.comcat_input,
         moment_tensor_input_path=args.moment_tensor_input,
         dataset_name=args.dataset_name,
+        train_start_year=args.train_start_year,
+        train_end_year=args.train_end_year,
+        validation_years=(args.validation_year,),
+        test_years=tuple(args.test_years),
         force_recompute=args.force_recompute,
         verbose=not args.quiet,
     )
