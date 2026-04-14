@@ -5,18 +5,23 @@ import pandas as pd
 
 def assign_data_split(
     dataset_df: pd.DataFrame,
-    train_years: tuple[int, ...] = tuple(range(2015, 2024)),
-    validation_years: tuple[int, ...] = (2024,),
-    test_years: tuple[int, ...] = (2025,),
+    train_start_year: int = 2010,
+    train_end_year: int = 2022,
+    validation_years: tuple[int, ...] = (2023,),
+    test_years: tuple[int, ...] = (2024, 2025),
 ) -> pd.DataFrame:
     """
-    Assign the school-project split:
-    train = 2015-2023, validation = 2024, test = 2025.
+    Assign the project split:
+    train = 2010-2022, validation = 2023, test = 2024-2025.
     """
     df = dataset_df.copy()
 
     if "trigger_year" not in df.columns:
-        df["trigger_year"] = pd.to_datetime(df["trigger_time"], utc=True, errors="coerce").dt.year
+        df["trigger_year"] = pd.to_datetime(
+            df["trigger_time"], utc=True, errors="coerce"
+        ).dt.year
+
+    train_years = tuple(range(train_start_year, train_end_year + 1))
 
     df["split"] = "holdout"
     df.loc[df["trigger_year"].isin(train_years), "split"] = "train"
