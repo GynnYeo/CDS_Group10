@@ -59,6 +59,15 @@ QUALITY_FEATURES = [
     "nst",
 ]
 
+# First neural baseline feature set for modeling-stage-only experiments.
+NN_CORE_V1 = (
+    BASE_TABULAR_FEATURES
+    + QUALITY_FEATURES
+    + [
+        "trigger_year_feature",
+    ]
+)
+
 GCMT_FEATURES = [
     "has_gcmt",
     "gcmt_time_diff_sec",
@@ -104,6 +113,9 @@ GCMT_FEATURES = [
     "dip2",
     "rake2",
 ]
+
+# Modeling-stage-only neural feature set with optional GCMT enrichment.
+NN_ENRICHED_V1 = NN_CORE_V1 + GCMT_FEATURES
 
 EXTENDED_TABULAR_FEATURES = (
     BASE_TABULAR_FEATURES
