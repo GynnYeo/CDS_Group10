@@ -38,6 +38,8 @@ NON_FEATURE_COLUMNS = [
     "y_72h",
     "n_aftershocks_24h",
     "n_aftershocks_72h",
+    "max_aftershock_magnitude_24h",
+    "max_aftershock_magnitude_72h",
 ]
 
 BASE_TABULAR_FEATURES = [

@@ -31,6 +31,7 @@ from src.evaluation.validation import (
 from src.models.input_layer import EXPECTED_SPLITS
 from src.models.neural.data import (
     COUNT_TARGET_COLUMNS,
+    MAGNITUDE_TARGET_COLUMNS,
     PROBABILITY_TARGET_COLUMNS,
     PreparedNeuralInputs,
     get_feature_set_by_name,
@@ -42,34 +43,49 @@ from src.models.neural.model import build_multitask_mlp
 HORIZONS = (24, 72)
 PROBABILITY_TARGETS_BY_HORIZON = list(zip(HORIZONS, PROBABILITY_TARGET_COLUMNS))
 COUNT_TARGETS_BY_HORIZON = list(zip(HORIZONS, COUNT_TARGET_COLUMNS))
+MAGNITUDE_TARGETS_BY_HORIZON = list(zip(HORIZONS, MAGNITUDE_TARGET_COLUMNS))
 
-
-class MultiTaskTensorDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
-    """Minimal dataset returning features plus both target groups."""
+class MultiTaskTensorDataset(
+    Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]
+):
+    """Minimal dataset returning features plus all target groups."""
 
     def __init__(
         self,
         features: torch.Tensor,
         probability_targets: torch.Tensor,
         count_targets: torch.Tensor,
+        magnitude_targets: torch.Tensor,
+        magnitude_masks: torch.Tensor,
     ) -> None:
         if not (
-            len(features) == len(probability_targets) == len(count_targets)
+            len(features)
+            == len(probability_targets)
+            == len(count_targets)
+            == len(magnitude_targets)
+            == len(magnitude_masks)
         ):
-            raise ValueError("Features and targets must have matching lengths.")
+            raise ValueError("Features, targets, and masks must have matching lengths.")
 
         self.features = features
         self.probability_targets = probability_targets
         self.count_targets = count_targets
+        self.magnitude_targets = magnitude_targets
+        self.magnitude_masks = magnitude_masks
 
     def __len__(self) -> int:
         return len(self.features)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
             self.features[index],
             self.probability_targets[index],
             self.count_targets[index],
+            self.magnitude_targets[index],
+            self.magnitude_masks[index],
         )
 
 
@@ -219,6 +235,21 @@ def counts_to_log_tensor(df: pd.DataFrame) -> torch.Tensor:
     return torch.tensor(np.log1p(count_values), dtype=torch.float32)
 
 
+def magnitude_to_tensor_and_mask(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert magnitude targets to tensors and build masks for non-missing targets."""
+
+    magnitude_values = df.to_numpy(dtype=np.float32)
+    magnitude_mask = ~np.isnan(magnitude_values)
+
+    # Replace NaN with 0 only as a harmless placeholder.
+    # The mask prevents these placeholder values from contributing to loss.
+    filled_values = np.nan_to_num(magnitude_values, nan=0.0)
+
+    return (
+        torch.tensor(filled_values, dtype=torch.float32),
+        torch.tensor(magnitude_mask, dtype=torch.bool),
+    )
+
 def build_data_loaders(
     prepared: PreparedNeuralInputs,
     batch_size: int,
@@ -241,12 +272,23 @@ def build_data_loaders(
         "test": counts_to_log_tensor(prepared.y_count_test),
     }
 
+    magnitude_tensors = {}
+    magnitude_masks = {}
+    for split_name in EXPECTED_SPLITS:
+        magnitude_tensors[split_name], magnitude_masks[split_name] = (
+            magnitude_to_tensor_and_mask(
+                getattr(prepared, f"y_magnitude_{split_name}")
+            )
+        )
+
     loaders = {
         split_name: DataLoader(
             MultiTaskTensorDataset(
                 features=feature_tensors[split_name],
                 probability_targets=probability_tensors[split_name],
                 count_targets=count_tensors[split_name],
+                magnitude_targets=magnitude_tensors[split_name],
+                magnitude_masks=magnitude_masks[split_name],
             ),
             batch_size=batch_size,
             shuffle=(split_name == "train"),
@@ -264,17 +306,56 @@ def compute_loss_components(
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
     count_loss_weight,
+    magnitude_targets: torch.Tensor,
+    magnitude_masks: torch.Tensor,
+    magnitude_loss_fn: nn.Module,
+    magnitude_loss_weight: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute total, probability, and count losses for one batch."""
 
     outputs = model(features)
+
     prob_loss = probability_loss_fn(outputs["prob_logits"], probability_targets)
     count_loss = count_loss_fn(outputs["count_pred"], count_targets)
-    # total_loss = prob_loss + count_loss
-    # total_loss = prob_loss + 2.0 * count_loss
-    total_loss = prob_loss + count_loss_weight * count_loss
-    return total_loss, prob_loss, count_loss
+    magnitude_loss = compute_masked_magnitude_loss(
+        magnitude_predictions=outputs["magnitude_pred"],
+        magnitude_targets=magnitude_targets,
+        magnitude_masks=magnitude_masks,
+        magnitude_loss_fn=magnitude_loss_fn,
+    )
 
+    total_loss = (
+        prob_loss
+        + count_loss_weight * count_loss
+        + magnitude_loss_weight * magnitude_loss
+    )
+
+    return total_loss, prob_loss, count_loss, magnitude_loss
+
+def compute_masked_magnitude_loss(
+    magnitude_predictions: torch.Tensor,
+    magnitude_targets: torch.Tensor,
+    magnitude_masks: torch.Tensor,
+    magnitude_loss_fn: nn.Module,
+) -> torch.Tensor:
+    """Compute magnitude loss only where magnitude targets exist."""
+
+    per_horizon_losses = []
+
+    for horizon_index in range(magnitude_predictions.shape[1]):
+        horizon_mask = magnitude_masks[:, horizon_index]
+        if horizon_mask.any():
+            per_horizon_losses.append(
+                magnitude_loss_fn(
+                    magnitude_predictions[horizon_mask, horizon_index],
+                    magnitude_targets[horizon_mask, horizon_index],
+                )
+            )
+
+    if not per_horizon_losses:
+        return magnitude_predictions.sum() * 0.0
+
+    return torch.stack(per_horizon_losses).mean()
 
 def run_training_epoch(
     model: nn.Module,
@@ -282,6 +363,8 @@ def run_training_epoch(
     optimizer: torch.optim.Optimizer,
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
+    magnitude_loss_fn: nn.Module,
+    magnitude_loss_weight: float,
     device: torch.device,
     epoch: int,
     total_epochs: int,
@@ -294,19 +377,22 @@ def run_training_epoch(
     running_total = 0.0
     running_prob = 0.0
     running_count = 0.0
+    running_magnitude = 0.0
 
     progress = tqdm(
         data_loader,
         desc=f"Epoch {epoch}/{total_epochs}",
         leave=False,
     )
-    for features, probability_targets, count_targets in progress:
+    for features, probability_targets, count_targets, magnitude_targets, magnitude_masks in progress:
         features = features.to(device)
         probability_targets = probability_targets.to(device)
         count_targets = count_targets.to(device)
+        magnitude_targets = magnitude_targets.to(device)
+        magnitude_masks = magnitude_masks.to(device)
 
         optimizer.zero_grad()
-        total_loss, prob_loss, count_loss = compute_loss_components(
+        total_loss, prob_loss, count_loss,magnitude_loss = compute_loss_components(
             model=model,
             features=features,
             probability_targets=probability_targets,
@@ -314,6 +400,10 @@ def run_training_epoch(
             probability_loss_fn=probability_loss_fn,
             count_loss_fn=count_loss_fn,
             count_loss_weight=count_loss_weight,
+            magnitude_targets=magnitude_targets,
+            magnitude_masks=magnitude_masks,
+            magnitude_loss_fn=magnitude_loss_fn,
+            magnitude_loss_weight=magnitude_loss_weight,
         )
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -324,6 +414,7 @@ def run_training_epoch(
         running_total += float(total_loss.item()) * batch_size
         running_prob += float(prob_loss.item()) * batch_size
         running_count += float(count_loss.item()) * batch_size
+        running_magnitude += float(magnitude_loss.item()) * batch_size
 
         progress.set_postfix(loss=f"{(running_total / total_examples):.4f}")
 
@@ -331,6 +422,7 @@ def run_training_epoch(
         "train_total_loss": running_total / total_examples,
         "train_prob_loss": running_prob / total_examples,
         "train_count_loss": running_count / total_examples,
+        "train_magnitude_loss": running_magnitude / total_examples,
     }
 
 
@@ -339,6 +431,8 @@ def run_validation_epoch(
     data_loader: DataLoader,
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
+    magnitude_loss_fn: nn.Module,
+    magnitude_loss_weight: float,
     device: torch.device,
     count_loss_weight: float,
 ) -> dict[str, float]:
@@ -349,14 +443,17 @@ def run_validation_epoch(
     running_total = 0.0
     running_prob = 0.0
     running_count = 0.0
+    running_magnitude = 0.0
 
     with torch.no_grad():
-        for features, probability_targets, count_targets in data_loader:
+        for features, probability_targets, count_targets, magnitude_targets, magnitude_masks in data_loader:
             features = features.to(device)
             probability_targets = probability_targets.to(device)
             count_targets = count_targets.to(device)
+            magnitude_targets = magnitude_targets.to(device)
+            magnitude_masks = magnitude_masks.to(device)
 
-            total_loss, prob_loss, count_loss = compute_loss_components(
+            total_loss, prob_loss, count_loss, magnitude_loss = compute_loss_components(
                 model=model,
                 features=features,
                 probability_targets=probability_targets,
@@ -364,6 +461,10 @@ def run_validation_epoch(
                 probability_loss_fn=probability_loss_fn,
                 count_loss_fn=count_loss_fn,
                 count_loss_weight=count_loss_weight,
+                magnitude_targets=magnitude_targets,
+                magnitude_masks=magnitude_masks,
+                magnitude_loss_fn=magnitude_loss_fn,
+                magnitude_loss_weight=magnitude_loss_weight,
             )
 
             batch_size = features.size(0)
@@ -371,11 +472,13 @@ def run_validation_epoch(
             running_total += float(total_loss.item()) * batch_size
             running_prob += float(prob_loss.item()) * batch_size
             running_count += float(count_loss.item()) * batch_size
+            running_magnitude += float(magnitude_loss.item()) * batch_size
 
     return {
         "val_total_loss": running_total / total_examples,
         "val_prob_loss": running_prob / total_examples,
         "val_count_loss": running_count / total_examples,
+        "val_magnitude_loss": running_magnitude / total_examples,
     }
 
 
@@ -406,7 +509,7 @@ def predict_split_outputs(
     features_tensor: torch.Tensor,
     batch_size: int,
     device: torch.device,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Run split-level inference and return probability and count predictions."""
 
     model.eval()
@@ -417,6 +520,7 @@ def predict_split_outputs(
     )
     probability_chunks: list[np.ndarray] = []
     count_chunks: list[np.ndarray] = []
+    magnitude_chunks: list[np.ndarray] = []
 
     with torch.no_grad():
         for (features_batch,) in feature_loader:
@@ -426,12 +530,14 @@ def predict_split_outputs(
                 torch.sigmoid(outputs["prob_logits"]).cpu().numpy()
             )
             count_chunks.append(outputs["count_pred"].cpu().numpy())
+            magnitude_chunks.append(outputs["magnitude_pred"].cpu().numpy())
 
     probability_predictions = np.concatenate(probability_chunks, axis=0)
     count_log_predictions = np.concatenate(count_chunks, axis=0)
     count_predictions = np.expm1(count_log_predictions)
     count_predictions = np.clip(count_predictions, a_min=0.0, a_max=None)
-    return probability_predictions, count_predictions
+    magnitude_predictions = np.concatenate(magnitude_chunks, axis=0)
+    return probability_predictions, count_predictions, magnitude_predictions
 
 
 def format_probability_predictions(
@@ -519,6 +625,49 @@ def format_count_predictions(
     return prediction_df
 
 
+def format_magnitude_predictions(
+    ids: pd.Series,
+    split_labels: pd.Series,
+    y_true: pd.DataFrame,
+    y_pred: np.ndarray,
+    model_name: str,
+) -> pd.DataFrame:
+    """Format long-form conditional maximum-magnitude predictions for one split."""
+
+    frames: list[pd.DataFrame] = []
+    for index, (horizon, target_column) in enumerate(MAGNITUDE_TARGETS_BY_HORIZON):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "trigger_event_id": ids.to_numpy(),
+                    "split": split_labels.to_numpy(),
+                    "horizon": horizon,
+                    "model_name": model_name,
+                    "y_true": y_true[target_column].to_numpy(dtype=float),
+                    "y_pred": y_pred[:, index].astype(float),
+                    "target_available": y_true[target_column].notna().to_numpy(),
+                }
+            )
+        )
+
+    prediction_df = pd.concat(frames, ignore_index=True)
+
+    validate_prediction_frame(
+        prediction_df=prediction_df,
+        required_columns=[
+            "trigger_event_id",
+            "split",
+            "horizon",
+            "model_name",
+            "y_pred",
+            "target_available",
+        ],
+        split_col="split",
+    )
+
+    return prediction_df
+
+
 def collect_prediction_tables(
     model: nn.Module,
     prepared: PreparedNeuralInputs,
@@ -526,11 +675,12 @@ def collect_prediction_tables(
     batch_size: int,
     device: torch.device,
     model_name: str,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Generate standardized prediction tables for all splits."""
 
     probability_frames: list[pd.DataFrame] = []
     count_frames: list[pd.DataFrame] = []
+    magnitude_frames: list[pd.DataFrame] = []
 
     split_metadata = {
         "train": (
@@ -538,29 +688,32 @@ def collect_prediction_tables(
             prepared.train_splits,
             prepared.y_prob_train,
             prepared.y_count_train,
+            prepared.y_magnitude_train,
         ),
         "val": (
             prepared.val_ids,
             prepared.val_splits,
             prepared.y_prob_val,
             prepared.y_count_val,
+            prepared.y_magnitude_val,
         ),
         "test": (
             prepared.test_ids,
             prepared.test_splits,
             prepared.y_prob_test,
             prepared.y_count_test,
+            prepared.y_magnitude_test,
         ),
     }
 
     for split_name in EXPECTED_SPLITS:
-        probability_predictions, count_predictions = predict_split_outputs(
+        probability_predictions, count_predictions, magnitude_predictions = predict_split_outputs(
             model=model,
             features_tensor=feature_tensors[split_name],
             batch_size=batch_size,
             device=device,
         )
-        ids, split_labels, probability_targets, count_targets = split_metadata[split_name]
+        ids, split_labels, probability_targets, count_targets, magnitude_targets = split_metadata[split_name]
         probability_frames.append(
             format_probability_predictions(
                 ids=ids,
@@ -579,10 +732,20 @@ def collect_prediction_tables(
                 model_name=model_name,
             )
         )
+        magnitude_frames.append(
+            format_magnitude_predictions(
+                ids=ids,
+                split_labels=split_labels,
+                y_true=magnitude_targets,
+                y_pred=magnitude_predictions,
+                model_name=model_name,
+            )
+        )
 
     probability_df = pd.concat(probability_frames, ignore_index=True)
     count_df = pd.concat(count_frames, ignore_index=True)
-    return probability_df, count_df
+    magnitude_df = pd.concat(magnitude_frames, ignore_index=True)
+    return probability_df, count_df, magnitude_df
 
 
 def sort_metric_rows(metrics_df: pd.DataFrame) -> pd.DataFrame:
@@ -654,6 +817,48 @@ def compute_count_metrics(prediction_df: pd.DataFrame) -> pd.DataFrame:
 
     return sort_metric_rows(pd.DataFrame(summary_rows))
 
+def compute_magnitude_metrics(prediction_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute conditional magnitude regression metrics by split and horizon."""
+
+    summary_rows: list[dict[str, float | int | str]] = []
+    group_columns = ["model_name", "split", "horizon"]
+
+    for (model_name, split_name, horizon), group_df in prediction_df.groupby(group_columns, sort=True):
+        available_df = group_df.loc[group_df["target_available"]].copy()
+
+        validate_prediction_frame(
+            prediction_df=available_df,
+            required_columns=[
+                "trigger_event_id",
+                "split",
+                "horizon",
+                "model_name",
+                "y_true",
+                "y_pred",
+            ],
+            id_col="trigger_event_id",
+            split_col="split",
+        )
+
+        metrics = evaluate_count_predictions(
+            available_df["y_true"],
+            available_df["y_pred"],
+        )
+
+        summary_rows.append(
+            {
+                "model_name": model_name,
+                "split": split_name,
+                "horizon": int(horizon),
+                "n_total": int(len(group_df)),
+                "n_available": int(len(available_df)),
+                "target_available_rate": float(len(available_df) / len(group_df)),
+                **metrics,
+            }
+        )
+
+    return sort_metric_rows(pd.DataFrame(summary_rows))
+
 
 def train_model(
     model: nn.Module,
@@ -661,6 +866,7 @@ def train_model(
     optimizer: torch.optim.Optimizer,
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
+    magnitude_loss_fn: nn.Module,
     device: torch.device,
     epochs: int,
     best_checkpoint_path: Path,
@@ -682,6 +888,8 @@ def train_model(
             optimizer=optimizer,
             probability_loss_fn=probability_loss_fn,
             count_loss_fn=count_loss_fn,
+            magnitude_loss_fn=magnitude_loss_fn,
+            magnitude_loss_weight=1.0,
             device=device,
             epoch=epoch,
             total_epochs=epochs,
@@ -692,9 +900,12 @@ def train_model(
             data_loader=loaders["val"],
             probability_loss_fn=probability_loss_fn,
             count_loss_fn=count_loss_fn,
+            magnitude_loss_fn=magnitude_loss_fn,
+            magnitude_loss_weight=1.0,
             device=device,
-            count_loss_weight=args.count_loss_weight,   
+            count_loss_weight=args.count_loss_weight,
         )
+
         epoch_seconds = time.perf_counter() - epoch_start
 
         epoch_record: dict[str, float | int] = {
@@ -726,6 +937,8 @@ def train_model(
             f"val_total={val_metrics['val_total_loss']:.4f} "
             f"val_prob={val_metrics['val_prob_loss']:.4f} "
             f"val_count={val_metrics['val_count_loss']:.4f} | "
+            f"train_mag={train_metrics['train_magnitude_loss']:.4f} "
+            f"val_mag={val_metrics['val_magnitude_loss']:.4f} | "
             f"time={epoch_seconds:.2f}s"
         )
 
@@ -793,6 +1006,7 @@ def main() -> None:
     )
     probability_loss_fn = nn.BCEWithLogitsLoss()
     count_loss_fn = nn.SmoothL1Loss()
+    magnitude_loss_fn = nn.SmoothL1Loss()
 
     best_checkpoint_path = checkpoint_dir / f"{args.run_name}_best.pt"
     last_checkpoint_path = checkpoint_dir / f"{args.run_name}_last.pt"
@@ -809,12 +1023,13 @@ def main() -> None:
         last_checkpoint_path=last_checkpoint_path,
         args=args,
         feature_cols=prepared.feature_cols,
+        magnitude_loss_fn=magnitude_loss_fn,
     )
 
     best_checkpoint = torch.load(best_checkpoint_path, map_location=device)
     model.load_state_dict(best_checkpoint["model_state_dict"])
 
-    probability_predictions, count_predictions = collect_prediction_tables(
+    probability_predictions, count_predictions, magnitude_predictions = collect_prediction_tables(
         model=model,
         prepared=prepared,
         feature_tensors=feature_tensors,
@@ -824,18 +1039,23 @@ def main() -> None:
     )
     probability_metrics = compute_probability_metrics(probability_predictions)
     count_metrics = compute_count_metrics(count_predictions)
+    magnitude_metrics = compute_magnitude_metrics(magnitude_predictions)
 
     history_df = pd.DataFrame(history)
     probability_predictions_path = output_dir / f"{args.run_name}_probability_predictions.csv"
     count_predictions_path = output_dir / f"{args.run_name}_count_predictions.csv"
     probability_metrics_path = output_dir / f"{args.run_name}_probability_metrics.csv"
     count_metrics_path = output_dir / f"{args.run_name}_count_metrics.csv"
+    magnitude_predictions_path = output_dir / f"{args.run_name}_magnitude_predictions.csv"
+    magnitude_metrics_path = output_dir / f"{args.run_name}_magnitude_metrics.csv"
     history_path = output_dir / f"{args.run_name}_history.csv"
 
     probability_predictions.to_csv(probability_predictions_path, index=False)
     count_predictions.to_csv(count_predictions_path, index=False)
     probability_metrics.to_csv(probability_metrics_path, index=False)
     count_metrics.to_csv(count_metrics_path, index=False)
+    magnitude_predictions.to_csv(magnitude_predictions_path, index=False)
+    magnitude_metrics.to_csv(magnitude_metrics_path, index=False)
     history_df.to_csv(history_path, index=False)
 
     total_seconds = time.perf_counter() - run_start
@@ -848,6 +1068,8 @@ def main() -> None:
     print(f"Count predictions saved to: {count_predictions_path}")
     print(f"Probability metrics saved to: {probability_metrics_path}")
     print(f"Count metrics saved to: {count_metrics_path}")
+    print(f"Magnitude predictions saved to: {magnitude_predictions_path}")
+    print(f"Magnitude metrics saved to: {magnitude_metrics_path}")
     print(f"Best checkpoint saved to: {best_checkpoint_path}")
     print(f"Last checkpoint saved to: {last_checkpoint_path}")
 

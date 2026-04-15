@@ -35,6 +35,7 @@ class MultiTaskMLP(nn.Module):
         self.shared_trunk = nn.Sequential(*layers)
         self.probability_head = nn.Linear(in_features, 2)
         self.count_head = nn.Linear(in_features, 2)
+        self.magnitude_head = nn.Linear(in_features, 2)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Return raw logits for probabilities and real-valued count predictions."""
@@ -43,6 +44,7 @@ class MultiTaskMLP(nn.Module):
         return {
             "prob_logits": self.probability_head(shared_features),
             "count_pred": self.count_head(shared_features),
+            "magnitude_pred": self.magnitude_head(shared_features),
         }
 
 

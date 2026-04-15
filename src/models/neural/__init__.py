@@ -12,6 +12,7 @@ __all__ = [
     "ALL_NEURAL_TARGET_COLUMNS",
     "COUNT_TARGET_COLUMNS",
     "PROBABILITY_TARGET_COLUMNS",
+    "MAGNITUDE_TARGET_COLUMNS",
     "PreparedNeuralInputs",
     "MultiTaskMLP",
     "build_multitask_mlp",

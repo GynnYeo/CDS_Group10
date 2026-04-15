@@ -20,7 +20,16 @@ from src.utils.paths import PROCESSED_DATASETS_DIR, PROCESSED_SPLITS_DIR
 
 PROBABILITY_TARGET_COLUMNS = ["y_24h", "y_72h"]
 COUNT_TARGET_COLUMNS = ["n_aftershocks_24h", "n_aftershocks_72h"]
-ALL_NEURAL_TARGET_COLUMNS = PROBABILITY_TARGET_COLUMNS + COUNT_TARGET_COLUMNS
+MAGNITUDE_TARGET_COLUMNS = [
+    "max_aftershock_magnitude_24h",
+    "max_aftershock_magnitude_72h",
+]
+
+ALL_NEURAL_TARGET_COLUMNS = (
+    PROBABILITY_TARGET_COLUMNS
+    + COUNT_TARGET_COLUMNS
+    + MAGNITUDE_TARGET_COLUMNS
+)
 
 _NEURAL_FEATURE_SET_REGISTRY = {
     "nn_core_v1": NN_CORE_V1,
@@ -41,6 +50,9 @@ class PreparedNeuralInputs:
     y_count_train: pd.DataFrame
     y_count_val: pd.DataFrame
     y_count_test: pd.DataFrame
+    y_magnitude_train: pd.DataFrame
+    y_magnitude_val: pd.DataFrame
+    y_magnitude_test: pd.DataFrame
     feature_cols: list[str]
     train_ids: pd.Series
     val_ids: pd.Series
@@ -191,6 +203,9 @@ def prepare_multitask_neural_inputs(
         y_count_train=_extract_targets(train_df, COUNT_TARGET_COLUMNS),
         y_count_val=_extract_targets(val_df, COUNT_TARGET_COLUMNS),
         y_count_test=_extract_targets(test_df, COUNT_TARGET_COLUMNS),
+        y_magnitude_train=_extract_targets(train_df, MAGNITUDE_TARGET_COLUMNS),
+        y_magnitude_val=_extract_targets(val_df, MAGNITUDE_TARGET_COLUMNS),
+        y_magnitude_test=_extract_targets(test_df, MAGNITUDE_TARGET_COLUMNS),
         feature_cols=resolved_feature_cols,
         train_ids=train_df[id_col].copy(),
         val_ids=val_df[id_col].copy(),
