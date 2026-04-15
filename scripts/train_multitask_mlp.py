@@ -162,6 +162,12 @@ def parse_args() -> argparse.Namespace:
         default="reports/checkpoints",
         help="Directory for best/last model checkpoints.",
     )
+    parser.add_argument(
+        "--count-loss-weight",
+        type=float,
+        default=1.0,
+        help="Weight applied to the count loss in the multitask objective.",
+    )
     return parser.parse_args()
 
 
@@ -257,13 +263,16 @@ def compute_loss_components(
     count_targets: torch.Tensor,
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
+    count_loss_weight,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute total, probability, and count losses for one batch."""
 
     outputs = model(features)
     prob_loss = probability_loss_fn(outputs["prob_logits"], probability_targets)
     count_loss = count_loss_fn(outputs["count_pred"], count_targets)
-    total_loss = prob_loss + count_loss
+    # total_loss = prob_loss + count_loss
+    # total_loss = prob_loss + 2.0 * count_loss
+    total_loss = prob_loss + count_loss_weight * count_loss
     return total_loss, prob_loss, count_loss
 
 
@@ -276,6 +285,7 @@ def run_training_epoch(
     device: torch.device,
     epoch: int,
     total_epochs: int,
+    count_loss_weight,
 ) -> dict[str, float]:
     """Run one training epoch and return averaged losses."""
 
@@ -303,6 +313,7 @@ def run_training_epoch(
             count_targets=count_targets,
             probability_loss_fn=probability_loss_fn,
             count_loss_fn=count_loss_fn,
+            count_loss_weight=count_loss_weight,
         )
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -329,6 +340,7 @@ def run_validation_epoch(
     probability_loss_fn: nn.Module,
     count_loss_fn: nn.Module,
     device: torch.device,
+    count_loss_weight: float,
 ) -> dict[str, float]:
     """Run one validation epoch and return averaged losses."""
 
@@ -351,6 +363,7 @@ def run_validation_epoch(
                 count_targets=count_targets,
                 probability_loss_fn=probability_loss_fn,
                 count_loss_fn=count_loss_fn,
+                count_loss_weight=count_loss_weight,
             )
 
             batch_size = features.size(0)
@@ -672,6 +685,7 @@ def train_model(
             device=device,
             epoch=epoch,
             total_epochs=epochs,
+            count_loss_weight=args.count_loss_weight,
         )
         val_metrics = run_validation_epoch(
             model=model,
@@ -679,6 +693,7 @@ def train_model(
             probability_loss_fn=probability_loss_fn,
             count_loss_fn=count_loss_fn,
             device=device,
+            count_loss_weight=args.count_loss_weight,   
         )
         epoch_seconds = time.perf_counter() - epoch_start
 
@@ -732,8 +747,12 @@ def main() -> None:
     set_random_seed(args.seed)
 
     device = resolve_device(args.device)
-    output_dir = resolve_repo_path(args.output_dir)
-    checkpoint_dir = resolve_repo_path(args.checkpoint_dir)
+    base_output_dir = resolve_repo_path(args.output_dir)
+    base_checkpoint_dir = resolve_repo_path(args.checkpoint_dir)
+
+    output_dir = base_output_dir / args.run_name
+    checkpoint_dir = base_checkpoint_dir / args.run_name
+
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
