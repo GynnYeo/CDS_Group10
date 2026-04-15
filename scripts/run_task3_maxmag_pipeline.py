@@ -43,9 +43,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Model backend. 'auto' prefers xgboost when available.",
     )
     parser.add_argument(
+        "--feature-set",
+        choices=("extended", "compact"),
+        default="extended",
+        help="Feature set to use for the max-magnitude model.",
+    )
+    parser.add_argument(
         "--tune-xgboost",
         action="store_true",
         help="Run a small validation-based hyperparameter search for the XGBoost regressor.",
+    )
+    parser.add_argument(
+        "--early-stopping-rounds",
+        type=int,
+        default=None,
+        help="Optional XGBoost early stopping rounds to use when validation data is available.",
     )
     parser.add_argument(
         "--force-recompute-labels",
@@ -64,15 +76,19 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
     magnitude_slug = str(args.min_aftershock_magnitude).replace(".", "_")
-    predictions_path = METRICS_DIR / f"task3_maxmag_predictions_m{magnitude_slug}.csv"
-    metrics_path = METRICS_DIR / f"task3_maxmag_metrics_m{magnitude_slug}.csv"
-    metadata_path = METRICS_DIR / f"task3_maxmag_hparams_m{magnitude_slug}.json"
+    feature_suffix = "" if args.feature_set == "extended" else f"_{args.feature_set}"
+    es_suffix = "" if args.early_stopping_rounds is None else f"_es{args.early_stopping_rounds}"
+    predictions_path = METRICS_DIR / f"task3_maxmag_predictions_m{magnitude_slug}{feature_suffix}{es_suffix}.csv"
+    metrics_path = METRICS_DIR / f"task3_maxmag_metrics_m{magnitude_slug}{feature_suffix}{es_suffix}.csv"
+    metadata_path = METRICS_DIR / f"task3_maxmag_hparams_m{magnitude_slug}{feature_suffix}{es_suffix}.json"
 
     predictions_df, metrics_df, metadata = run_task3_maxmag_pipeline(
         dataset_name=args.dataset_name,
         min_aftershock_magnitude=args.min_aftershock_magnitude,
+        feature_set=args.feature_set,
         backend=args.backend,
         tune_xgboost=args.tune_xgboost,
+        early_stopping_rounds=args.early_stopping_rounds,
         force_recompute_labels=args.force_recompute_labels,
         verbose=not args.quiet,
     )

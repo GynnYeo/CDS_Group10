@@ -113,3 +113,30 @@ EXTENDED_TABULAR_FEATURES = (
     ]
     + GCMT_FEATURES
 )
+
+# Smaller, more conservative feature set for the max-magnitude task.
+# The goal is to keep the strongest trigger/context variables while avoiding
+# the very high-dimensional GCMT tensor/eigenvalue block that can invite noise.
+MAXMAG_COMPACT_FEATURES = [
+    "trigger_latitude",
+    "trigger_longitude",
+    "trigger_depth_km",
+    "trigger_magnitude",
+    "trigger_month",
+    "trigger_dayofyear",
+    "trigger_hour",
+    "prior_global_event_count_24h",
+    "prior_global_event_count_7d",
+    "gap",
+    "dmin",
+    "rms",
+    "nst",
+    "has_gcmt",
+    "gcmt_time_diff_sec",
+    "gcmt_distance_km",
+    "gcmt_mag_diff",
+    "gcmt_depth_km",
+    "strike",
+    "dip",
+    "rake",
+]

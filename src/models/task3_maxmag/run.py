@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from src.evaluation.metrics import evaluate_count_predictions
-from src.models.feature_sets import EXTENDED_TABULAR_FEATURES
+from src.models.feature_sets import EXTENDED_TABULAR_FEATURES, MAXMAG_COMPACT_FEATURES
 from src.models.input_layer import EXPECTED_SPLITS, InputConfig, PreparedInputs, load_modeling_splits, prepare_tabular_inputs
 from src.models.task3_maxmag.baselines import (
     BathsLawBaseline,
@@ -133,8 +133,10 @@ def run_task3_maxmag_pipeline(
     dataset_name: str,
     min_aftershock_magnitude: float = 2.5,
     feature_cols: list[str] | None = None,
+    feature_set: str = "extended",
     backend: str = "auto",
     tune_xgboost: bool = False,
+    early_stopping_rounds: int | None = None,
     force_recompute_labels: bool = False,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
@@ -146,10 +148,21 @@ def run_task3_maxmag_pipeline(
         verbose=verbose,
     )
     merged_splits = merge_task3_maxmag_labels_into_splits(splits, label_df)
-    requested_features = feature_cols or list(EXTENDED_TABULAR_FEATURES)
+    if feature_cols is not None:
+        requested_features = feature_cols
+        feature_set_name = "custom"
+    elif feature_set == "compact":
+        requested_features = list(MAXMAG_COMPACT_FEATURES)
+        feature_set_name = "compact"
+    else:
+        requested_features = list(EXTENDED_TABULAR_FEATURES)
+        feature_set_name = "extended"
     model_metadata: dict[str, Any] = {
         "dataset_name": dataset_name,
         "min_aftershock_magnitude": min_aftershock_magnitude,
+        "feature_set": feature_set_name,
+        "n_requested_features": len(requested_features),
+        "early_stopping_rounds": early_stopping_rounds,
         "xgboost_models": {},
     }
 
@@ -173,6 +186,7 @@ def run_task3_maxmag_pipeline(
             model = Task3MaxMagRegressor(
                 backend=variant_backend,
                 tune=variant_tune,
+                early_stopping_rounds=early_stopping_rounds,
             ).fit(
                 prepared.X_train,
                 prepared.y_train,

@@ -22,14 +22,15 @@ class Task3MaxMagRegressor:
     backend: str = "auto"
     random_state: int = 42
     max_iter: int = 300
-    learning_rate: float = 0.05
-    max_depth: int = 4
-    min_child_weight: float = 1.0
-    subsample: float = 0.9
-    colsample_bytree: float = 0.9
-    reg_lambda: float = 1.0
-    reg_alpha: float = 0.0
+    learning_rate: float = 0.03
+    max_depth: int = 3
+    min_child_weight: float = 3.0
+    subsample: float = 0.8
+    colsample_bytree: float = 0.8
+    reg_lambda: float = 3.0
+    reg_alpha: float = 0.5
     tune: bool = False
+    early_stopping_rounds: int | None = None
     model_: Any = None
     backend_: str | None = None
     best_params_: dict[str, float | int] | None = None
@@ -75,6 +76,8 @@ class Task3MaxMagRegressor:
         if self.tune and X_val is not None and y_val is not None:
             return self._fit_tuned_xgboost(X_train, y_train, X_val, y_val, xgb)
         params = self._current_xgb_params()
+        if self.early_stopping_rounds is not None and X_val is not None and y_val is not None:
+            params["early_stopping_rounds"] = int(self.early_stopping_rounds)
         model = xgb.XGBRegressor(**params)
         fit_kwargs: dict[str, Any] = {}
         if X_val is not None and y_val is not None:
@@ -95,14 +98,14 @@ class Task3MaxMagRegressor:
         xgb_module: Any,
     ) -> Any:
         candidate_grid = {
-            "n_estimators": [300, 500],
+            "n_estimators": [200, 300, 400],
             "learning_rate": [0.03, 0.05],
-            "max_depth": [3, 4],
-            "min_child_weight": [1.0, 3.0],
-            "subsample": [0.8, 1.0],
-            "colsample_bytree": [0.8, 1.0],
-            "reg_lambda": [1.0, 3.0],
-            "reg_alpha": [0.0, 0.5],
+            "max_depth": [2, 3],
+            "min_child_weight": [3.0, 5.0],
+            "subsample": [0.8, 0.9],
+            "colsample_bytree": [0.8, 0.9],
+            "reg_lambda": [3.0, 5.0],
+            "reg_alpha": [0.5, 1.0],
         }
         candidate_params = self._build_candidate_params(candidate_grid)
 
@@ -112,13 +115,14 @@ class Task3MaxMagRegressor:
         best_metrics: dict[str, float] | None = None
 
         for params in candidate_params:
+            if self.early_stopping_rounds is not None:
+                params["early_stopping_rounds"] = int(self.early_stopping_rounds)
             model = xgb_module.XGBRegressor(**params)
-            model.fit(
-                X_train,
-                y_train,
-                eval_set=[(X_val, y_val)],
-                verbose=False,
-            )
+            fit_kwargs: dict[str, Any] = {
+                "eval_set": [(X_val, y_val)],
+                "verbose": False,
+            }
+            model.fit(X_train, y_train, **fit_kwargs)
             val_pred = model.predict(X_val)
             metrics = self._evaluate_regression(y_val, val_pred)
             if metrics["rmse"] < best_rmse:

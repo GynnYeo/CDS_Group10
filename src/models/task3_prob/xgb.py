@@ -29,8 +29,12 @@ class Task3BinaryModel:
     backend: str = "auto"
     random_state: int = 42
     max_iter: int = 300
-    learning_rate: float = 0.05
-    max_depth: int = 4
+    learning_rate: float = 0.03
+    max_depth: int = 3
+    min_child_weight: float = 3.0
+    subsample: float = 0.8
+    colsample_bytree: float = 0.8
+    reg_lambda: float = 3.0
     model_: Any = None
     backend_: str | None = None
 
@@ -96,10 +100,10 @@ class Task3BinaryModel:
             n_estimators=self.max_iter,
             learning_rate=self.learning_rate,
             max_depth=self.max_depth,
-            subsample=0.9,
-            colsample_bytree=0.9,
-            reg_lambda=1.0,
-            min_child_weight=1.0,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            reg_lambda=self.reg_lambda,
+            min_child_weight=self.min_child_weight,
             objective="binary:logistic",
             eval_metric="logloss",
             random_state=self.random_state,
