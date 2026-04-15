@@ -38,6 +38,8 @@ NON_FEATURE_COLUMNS = [
     "y_72h",
     "n_aftershocks_24h",
     "n_aftershocks_72h",
+    "max_aftershock_magnitude_24h",
+    "max_aftershock_magnitude_72h",
 ]
 
 BASE_TABULAR_FEATURES = [
@@ -58,6 +60,15 @@ QUALITY_FEATURES = [
     "rms",
     "nst",
 ]
+
+# First neural baseline feature set for modeling-stage-only experiments.
+NN_CORE_V1 = (
+    BASE_TABULAR_FEATURES
+    + QUALITY_FEATURES
+    + [
+        "trigger_year_feature",
+    ]
+)
 
 GCMT_FEATURES = [
     "has_gcmt",
@@ -104,6 +115,9 @@ GCMT_FEATURES = [
     "dip2",
     "rake2",
 ]
+
+# Modeling-stage-only neural feature set with optional GCMT enrichment.
+NN_ENRICHED_V1 = NN_CORE_V1 + GCMT_FEATURES
 
 EXTENDED_TABULAR_FEATURES = (
     BASE_TABULAR_FEATURES
