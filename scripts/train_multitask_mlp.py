@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.evaluation.metrics import (
     evaluate_binary_probabilities,
     evaluate_count_predictions,
+    evaluate_capped_count_predictions,
 )
 from src.evaluation.validation import (
     validate_binary_prediction_columns,
@@ -44,6 +45,10 @@ HORIZONS = (24, 72)
 PROBABILITY_TARGETS_BY_HORIZON = list(zip(HORIZONS, PROBABILITY_TARGET_COLUMNS))
 COUNT_TARGETS_BY_HORIZON = list(zip(HORIZONS, COUNT_TARGET_COLUMNS))
 MAGNITUDE_TARGETS_BY_HORIZON = list(zip(HORIZONS, MAGNITUDE_TARGET_COLUMNS))
+COUNT_EVAL_CAPS_BY_HORIZON = {
+    24: 300.0,
+    72: 500.0,
+}
 
 class MultiTaskTensorDataset(
     Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]
@@ -817,6 +822,53 @@ def compute_count_metrics(prediction_df: pd.DataFrame) -> pd.DataFrame:
 
     return sort_metric_rows(pd.DataFrame(summary_rows))
 
+
+def compute_capped_count_metrics(prediction_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute horizon-specific capped count metrics by split and horizon."""
+
+    summary_rows: list[dict[str, float | int | str]] = []
+    group_columns = ["model_name", "split", "horizon"]
+
+    for (model_name, split_name, horizon), group_df in prediction_df.groupby(group_columns, sort=True):
+        validate_prediction_frame(
+            prediction_df=group_df,
+            required_columns=[
+                "trigger_event_id",
+                "split",
+                "horizon",
+                "model_name",
+                "y_true",
+                "y_pred",
+            ],
+            id_col="trigger_event_id",
+            split_col="split",
+        )
+
+        horizon_int = int(horizon)
+        if horizon_int not in COUNT_EVAL_CAPS_BY_HORIZON:
+            raise ValueError(
+                f"No capped count evaluation cap configured for horizon {horizon_int}."
+            )
+
+        cap = COUNT_EVAL_CAPS_BY_HORIZON[horizon_int]
+
+        metrics = evaluate_capped_count_predictions(
+            group_df["y_true"],
+            group_df["y_pred"],
+            cap=cap,
+        )
+
+        summary_rows.append(
+            {
+                "model_name": model_name,
+                "split": split_name,
+                "horizon": horizon_int,
+                **metrics,
+            }
+        )
+
+    return sort_metric_rows(pd.DataFrame(summary_rows))
+
 def compute_magnitude_metrics(prediction_df: pd.DataFrame) -> pd.DataFrame:
     """Compute conditional magnitude regression metrics by split and horizon."""
 
@@ -1039,6 +1091,7 @@ def main() -> None:
     )
     probability_metrics = compute_probability_metrics(probability_predictions)
     count_metrics = compute_count_metrics(count_predictions)
+    count_capped_metrics = compute_capped_count_metrics(count_predictions)
     magnitude_metrics = compute_magnitude_metrics(magnitude_predictions)
 
     history_df = pd.DataFrame(history)
@@ -1049,6 +1102,7 @@ def main() -> None:
     magnitude_predictions_path = output_dir / f"{args.run_name}_magnitude_predictions.csv"
     magnitude_metrics_path = output_dir / f"{args.run_name}_magnitude_metrics.csv"
     history_path = output_dir / f"{args.run_name}_history.csv"
+    count_capped_metrics_path = output_dir / f"{args.run_name}_count_capped_metrics.csv"
 
     probability_predictions.to_csv(probability_predictions_path, index=False)
     count_predictions.to_csv(count_predictions_path, index=False)
@@ -1057,6 +1111,7 @@ def main() -> None:
     magnitude_predictions.to_csv(magnitude_predictions_path, index=False)
     magnitude_metrics.to_csv(magnitude_metrics_path, index=False)
     history_df.to_csv(history_path, index=False)
+    count_capped_metrics.to_csv(count_capped_metrics_path, index=False)
 
     total_seconds = time.perf_counter() - run_start
     print(f"Total epochs: {args.epochs}")
@@ -1068,6 +1123,7 @@ def main() -> None:
     print(f"Count predictions saved to: {count_predictions_path}")
     print(f"Probability metrics saved to: {probability_metrics_path}")
     print(f"Count metrics saved to: {count_metrics_path}")
+    print(f"Capped Count metrics saved to: {count_capped_metrics_path}")
     print(f"Magnitude predictions saved to: {magnitude_predictions_path}")
     print(f"Magnitude metrics saved to: {magnitude_metrics_path}")
     print(f"Best checkpoint saved to: {best_checkpoint_path}")
