@@ -1,0 +1,8 @@
+numpy
+pandas
+pyarrow
+requests
+scikit-learn
+torch
+tqdm
+pytest

@@ -5,7 +5,7 @@ import torch.nn as nn
 
 
 class MultiTaskMLP(nn.Module):
-    """Simple shared-trunk MLP with separate probability and count heads."""
+    """Simple shared-trunk MLP with probability, count, and magnitude heads."""
 
     def __init__(
         self,
@@ -38,7 +38,7 @@ class MultiTaskMLP(nn.Module):
         self.magnitude_head = nn.Linear(in_features, 2)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Return raw logits for probabilities and real-valued count predictions."""
+        """Return raw logits plus real-valued count and magnitude predictions."""
 
         shared_features = self.shared_trunk(x)
         return {
