@@ -15,9 +15,15 @@ from src.models.neural.losses import compute_loss_components
 
 @dataclass(slots=True)
 class TrainingConfig:
-    """Configuration for the multitask MLP training loop."""
+    """
+    Configuration for the multitask MLP training loop.
+
+    ``count_modeling_mode`` changes which rows contribute to the count loss, so
+    logged count-loss values should only be compared within the same mode.
+    """
 
     epochs: int
+    count_modeling_mode: str = "standard"
     count_loss_weight: float = 1.0
     magnitude_loss_weight: float = 1.0
     gradient_clip_max_norm: float = 1.0
@@ -33,11 +39,17 @@ def run_training_epoch(
     device: torch.device,
     epoch: int,
     total_epochs: int,
+    count_modeling_mode: str,
     count_loss_weight: float,
     magnitude_loss_weight: float,
     gradient_clip_max_norm: float = 1.0,
 ) -> dict[str, float]:
-    """Run one training epoch and return averaged multitask losses."""
+    """
+    Run one training epoch and return averaged multitask losses.
+
+    The count-loss average reflects the selected ``count_modeling_mode`` and is
+    therefore not directly comparable across different count modes.
+    """
 
     model.train()
     total_examples = 0
@@ -77,6 +89,7 @@ def run_training_epoch(
             magnitude_loss_fn=magnitude_loss_fn,
             count_loss_weight=count_loss_weight,
             magnitude_loss_weight=magnitude_loss_weight,
+            count_modeling_mode=count_modeling_mode,
         )
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=gradient_clip_max_norm)
@@ -106,10 +119,16 @@ def run_validation_epoch(
     count_loss_fn: nn.Module,
     magnitude_loss_fn: nn.Module,
     device: torch.device,
+    count_modeling_mode: str,
     count_loss_weight: float,
     magnitude_loss_weight: float,
 ) -> dict[str, float]:
-    """Run one validation epoch and return averaged multitask losses."""
+    """
+    Run one validation epoch and return averaged multitask losses.
+
+    The validation count loss uses the active count-modeling mode, so its numeric
+    value should only be compared against runs that used the same mode.
+    """
 
     model.eval()
     total_examples = 0
@@ -144,6 +163,7 @@ def run_validation_epoch(
                 magnitude_loss_fn=magnitude_loss_fn,
                 count_loss_weight=count_loss_weight,
                 magnitude_loss_weight=magnitude_loss_weight,
+                count_modeling_mode=count_modeling_mode,
             )
 
             batch_size = features.size(0)
@@ -217,6 +237,7 @@ def train_model(
             device=device,
             epoch=epoch,
             total_epochs=training_config.epochs,
+            count_modeling_mode=training_config.count_modeling_mode,
             count_loss_weight=training_config.count_loss_weight,
             magnitude_loss_weight=training_config.magnitude_loss_weight,
             gradient_clip_max_norm=training_config.gradient_clip_max_norm,
@@ -228,6 +249,7 @@ def train_model(
             count_loss_fn=count_loss_fn,
             magnitude_loss_fn=magnitude_loss_fn,
             device=device,
+            count_modeling_mode=training_config.count_modeling_mode,
             count_loss_weight=training_config.count_loss_weight,
             magnitude_loss_weight=training_config.magnitude_loss_weight,
         )

@@ -29,8 +29,16 @@ def predict_split_outputs(
     features_tensor: torch.Tensor,
     batch_size: int,
     device: torch.device,
+    count_modeling_mode: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Run split-level inference and return probability, count, and magnitude predictions."""
+    """
+    Run split-level inference and return final probability, count, and magnitude outputs.
+
+    In ``conditional_positive`` mode, ``outputs["count_pred"]`` is interpreted as
+    positive-case severity on the log-count scale before probability weighting.
+    The returned count array is always the final standardized count prediction used
+    for CSV export and downstream count evaluation.
+    """
 
     model.eval()
     feature_loader = DataLoader(
@@ -54,8 +62,25 @@ def predict_split_outputs(
 
     probability_predictions = np.concatenate(probability_chunks, axis=0)
     count_log_predictions = np.concatenate(count_chunks, axis=0)
-    count_predictions = np.expm1(count_log_predictions)
-    count_predictions = np.clip(count_predictions, a_min=0.0, a_max=None)
+    if count_modeling_mode == "standard":
+        count_predictions = np.expm1(count_log_predictions)
+        count_predictions = np.clip(count_predictions, a_min=0.0, a_max=None)
+    elif count_modeling_mode == "conditional_positive":
+        # In conditional mode the count head estimates severity given a positive
+        # case, so convert back to count space before weighting by event
+        # probability to recover the final unconditional count prediction.
+        positive_count_predictions = np.expm1(count_log_predictions)
+        positive_count_predictions = np.clip(
+            positive_count_predictions,
+            a_min=0.0,
+            a_max=None,
+        )
+        count_predictions = probability_predictions * positive_count_predictions
+    else:
+        raise ValueError(
+            "count_modeling_mode must be 'standard' or 'conditional_positive', "
+            f"got {count_modeling_mode!r}."
+        )
     magnitude_predictions = np.concatenate(magnitude_chunks, axis=0)
     return probability_predictions, count_predictions, magnitude_predictions
 
@@ -221,8 +246,15 @@ def collect_prediction_tables(
     batch_size: int,
     device: torch.device,
     model_name: str,
+    count_modeling_mode: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Generate standardized prediction tables for all project splits."""
+    """
+    Generate standardized prediction tables for all project splits.
+
+    The count table keeps the existing CSV schema in both modes. Only the meaning
+    of the exported ``y_pred`` changes in ``conditional_positive`` mode, where it
+    becomes the probability-weighted final count prediction.
+    """
 
     probability_frames: list[pd.DataFrame] = []
     count_frames: list[pd.DataFrame] = []
@@ -259,6 +291,7 @@ def collect_prediction_tables(
                 features_tensor=feature_tensors[split_name],
                 batch_size=batch_size,
                 device=device,
+                count_modeling_mode=count_modeling_mode,
             )
         )
         ids, split_labels, probability_targets, count_targets, magnitude_targets = split_metadata[split_name]

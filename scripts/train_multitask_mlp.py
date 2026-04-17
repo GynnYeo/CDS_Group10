@@ -27,6 +27,7 @@ from src.models.neural.data import (
     get_feature_set_by_name,
     prepare_multitask_neural_inputs,
 )
+from src.models.neural.losses import BinaryFocalLoss
 from src.models.neural.model import build_multitask_mlp
 from src.models.neural.prediction import collect_prediction_tables
 from src.models.neural.tensors import build_data_loaders
@@ -139,6 +140,59 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Weight applied to the count loss in the multitask objective.",
     )
+    parser.add_argument(
+        "--count-modeling-mode",
+        type=str,
+        default="standard",
+        choices=["standard", "conditional_positive"],
+        help=(
+            "Count modeling mode. 'standard' keeps the existing count loss and "
+            "inference behavior. 'conditional_positive' trains count loss only "
+            "on positive-count targets and writes probability-weighted positive "
+            "severity predictions to the standard count prediction output."
+        ),
+    )
+    parser.add_argument(
+        "--probability-loss",
+        type=str,
+        default="bce",
+        choices=["bce", "focal"],
+        help=(
+            "Probability loss to optimize. "
+            "'bce' uses BCEWithLogitsLoss. "
+            "'focal' uses binary focal loss on logits."
+        ),
+    )
+    parser.add_argument(
+        "--focal-gamma",
+        type=float,
+        default=1.5,
+        help=(
+            "Gamma parameter for focal loss. "
+            "Only used when --probability-loss focal."
+        ),
+    )
+    parser.add_argument(
+        "--probability-head-hidden-dims",
+        type=int,
+        nargs="*",
+        default=None,
+        help=(
+            "Optional hidden layer sizes for a probability-specific tower. "
+            "If omitted, the probability head remains the original linear head."
+        ),
+    )
+
+    parser.add_argument(
+        "--magnitude-head-hidden-dims",
+        type=int,
+        nargs="*",
+        default=None,
+        help=(
+            "Optional hidden layer sizes for a magnitude-specific tower. "
+            "If omitted, the magnitude head remains the original linear head."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -154,9 +208,21 @@ def main() -> None:
     )
 
     hidden_dims = tuple(args.hidden_dims)
+    probability_head_hidden_dims = (
+        tuple(args.probability_head_hidden_dims)
+        if args.probability_head_hidden_dims
+        else None
+    )
+
     count_head_hidden_dims = (
         tuple(args.count_head_hidden_dims)
         if args.count_head_hidden_dims
+        else None
+    )
+
+    magnitude_head_hidden_dims = (
+        tuple(args.magnitude_head_hidden_dims)
+        if args.magnitude_head_hidden_dims
         else None
     )
     scale = not args.no_scale
@@ -167,6 +233,10 @@ def main() -> None:
     print(f"Requested feature count: {len(feature_cols)}")
     print(f"Device: {device}")
     print(f"Scaling enabled: {scale}")
+    print(f"Count modeling mode: {args.count_modeling_mode}")
+    print(f"Probability loss: {args.probability_loss}")
+    if args.probability_loss == "focal":
+        print(f"Focal gamma: {args.focal_gamma}")
 
     run_start = time.perf_counter()
     prepared = prepare_multitask_neural_inputs(
@@ -187,18 +257,29 @@ def main() -> None:
         input_dim=len(prepared.feature_cols),
         hidden_dims=hidden_dims,
         dropout=args.dropout,
+        probability_head_hidden_dims=probability_head_hidden_dims,
         count_head_hidden_dims=count_head_hidden_dims,
+        magnitude_head_hidden_dims=magnitude_head_hidden_dims,
     ).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
-    probability_loss_fn = nn.BCEWithLogitsLoss()
+    if args.probability_loss == "bce":
+        probability_loss_fn = nn.BCEWithLogitsLoss()
+    elif args.probability_loss == "focal":
+        probability_loss_fn = BinaryFocalLoss(gamma=args.focal_gamma)
+    else:
+        raise ValueError(
+            "probability_loss must be 'bce' or 'focal', "
+            f"got {args.probability_loss!r}."
+        )
     count_loss_fn = nn.SmoothL1Loss()
     magnitude_loss_fn = nn.SmoothL1Loss()
     training_config = TrainingConfig(
         epochs=args.epochs,
+        count_modeling_mode=args.count_modeling_mode,
         count_loss_weight=args.count_loss_weight,
         magnitude_loss_weight=1.0,
         gradient_clip_max_norm=1.0,
@@ -233,6 +314,7 @@ def main() -> None:
             batch_size=args.batch_size,
             device=device,
             model_name=args.run_name,
+            count_modeling_mode=args.count_modeling_mode,
         )
     )
     probability_metrics = compute_probability_metrics(probability_predictions)

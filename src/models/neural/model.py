@@ -38,7 +38,9 @@ class MultiTaskMLP(nn.Module):
         input_dim: int,
         hidden_dims: tuple[int, ...] = (128, 64),
         dropout: float = 0.2,
+        probability_head_hidden_dims: Sequence[int] | None = None,
         count_head_hidden_dims: Sequence[int] | None = None,
+        magnitude_head_hidden_dims: Sequence[int] | None = None,
     ) -> None:
         super().__init__()
 
@@ -60,14 +62,24 @@ class MultiTaskMLP(nn.Module):
             in_features = hidden_dim
 
         self.shared_trunk = nn.Sequential(*layers)
-        self.probability_head = nn.Linear(in_features, 2)
+        self.probability_head = _build_head(
+            input_dim=in_features,
+            output_dim=2,
+            hidden_dims=probability_head_hidden_dims,
+            dropout=dropout,
+        )
         self.count_head = _build_head(
             input_dim=in_features,
             output_dim=2,
             hidden_dims=count_head_hidden_dims,
             dropout=dropout,
         )
-        self.magnitude_head = nn.Linear(in_features, 2)
+        self.magnitude_head = _build_head(
+            input_dim=in_features,
+            output_dim=2,
+            hidden_dims=magnitude_head_hidden_dims,
+            dropout=dropout,
+        )       
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Return raw logits plus real-valued count and magnitude predictions."""
@@ -84,7 +96,9 @@ def build_multitask_mlp(
     input_dim: int,
     hidden_dims: tuple[int, ...] = (128, 64),
     dropout: float = 0.2,
+    probability_head_hidden_dims: Sequence[int] | None = None,
     count_head_hidden_dims: Sequence[int] | None = None,
+    magnitude_head_hidden_dims: Sequence[int] | None = None,
 ) -> MultiTaskMLP:
     """Build the version-1 multitask MLP."""
 
@@ -92,5 +106,7 @@ def build_multitask_mlp(
         input_dim=input_dim,
         hidden_dims=hidden_dims,
         dropout=dropout,
+        probability_head_hidden_dims=probability_head_hidden_dims,
         count_head_hidden_dims=count_head_hidden_dims,
+        magnitude_head_hidden_dims=magnitude_head_hidden_dims,
     )
