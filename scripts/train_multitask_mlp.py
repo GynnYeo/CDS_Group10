@@ -93,6 +93,16 @@ def parse_args() -> argparse.Namespace:
         help="Hidden layer sizes for the shared MLP trunk.",
     )
     parser.add_argument(
+        "--count-head-hidden-dims",
+        type=int,
+        nargs="*",
+        default=None,
+        help=(
+            "Optional hidden layer sizes for a count-specific tower. "
+            "If omitted, the count head remains the original linear head."
+        ),
+    )
+    parser.add_argument(
         "--missing-strategy",
         default="median",
         help="Missing-value strategy passed to the modeling input layer.",
@@ -144,6 +154,11 @@ def main() -> None:
     )
 
     hidden_dims = tuple(args.hidden_dims)
+    count_head_hidden_dims = (
+        tuple(args.count_head_hidden_dims)
+        if args.count_head_hidden_dims
+        else None
+    )
     scale = not args.no_scale
     feature_cols = get_feature_set_by_name(args.feature_set)
 
@@ -172,6 +187,7 @@ def main() -> None:
         input_dim=len(prepared.feature_cols),
         hidden_dims=hidden_dims,
         dropout=args.dropout,
+        count_head_hidden_dims=count_head_hidden_dims,
     ).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),

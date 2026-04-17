@@ -1,7 +1,33 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import torch
 import torch.nn as nn
+
+
+def _build_head(
+    input_dim: int,
+    output_dim: int,
+    hidden_dims: Sequence[int] | None,
+    dropout: float,
+) -> nn.Module:
+    """Build a linear head or a small MLP tower depending on configuration."""
+
+    if not hidden_dims:
+        return nn.Linear(input_dim, output_dim)
+    if any(hidden_dim <= 0 for hidden_dim in hidden_dims):
+        raise ValueError("Head hidden dims must contain only positive integers.")
+
+    layers: list[nn.Module] = []
+    in_features = input_dim
+    for hidden_dim in hidden_dims:
+        layers.append(nn.Linear(in_features, hidden_dim))
+        layers.append(nn.ReLU())
+        layers.append(nn.Dropout(dropout))
+        in_features = hidden_dim
+    layers.append(nn.Linear(in_features, output_dim))
+    return nn.Sequential(*layers)
 
 
 class MultiTaskMLP(nn.Module):
@@ -12,6 +38,7 @@ class MultiTaskMLP(nn.Module):
         input_dim: int,
         hidden_dims: tuple[int, ...] = (128, 64),
         dropout: float = 0.2,
+        count_head_hidden_dims: Sequence[int] | None = None,
     ) -> None:
         super().__init__()
 
@@ -34,7 +61,12 @@ class MultiTaskMLP(nn.Module):
 
         self.shared_trunk = nn.Sequential(*layers)
         self.probability_head = nn.Linear(in_features, 2)
-        self.count_head = nn.Linear(in_features, 2)
+        self.count_head = _build_head(
+            input_dim=in_features,
+            output_dim=2,
+            hidden_dims=count_head_hidden_dims,
+            dropout=dropout,
+        )
         self.magnitude_head = nn.Linear(in_features, 2)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -52,6 +84,7 @@ def build_multitask_mlp(
     input_dim: int,
     hidden_dims: tuple[int, ...] = (128, 64),
     dropout: float = 0.2,
+    count_head_hidden_dims: Sequence[int] | None = None,
 ) -> MultiTaskMLP:
     """Build the version-1 multitask MLP."""
 
@@ -59,4 +92,5 @@ def build_multitask_mlp(
         input_dim=input_dim,
         hidden_dims=hidden_dims,
         dropout=dropout,
+        count_head_hidden_dims=count_head_hidden_dims,
     )
