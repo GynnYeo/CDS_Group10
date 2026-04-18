@@ -92,8 +92,8 @@ def format_prediction_summary(result: dict) -> str:
       </div>
       <div class="glass-card">
         <div class="section-title">Task 2 — Predicted Count</div>
-        <div class="metric-big">24h: {result['count_24h']:.2f}</div>
-        <div class="metric-big">72h: {result['count_72h']:.2f}</div>
+        <div class="metric-big">24h: {max(0, round(result['count_24h']))}</div>
+        <div class="metric-big">72h: {max(0, round(result['count_72h']))}</div>
       </div>
       <div class="glass-card">
         <div class="section-title">Task 3 — Predicted Max Magnitude</div>
@@ -251,7 +251,16 @@ with gr.Blocks(css=build_css(), title="Earthquake Aftershock Prediction System")
         with gr.Column(scale=1):
             file_input = gr.File(label="Upload JSON", file_types=[".json"])
             dataset_box = gr.Textbox(value=DEFAULT_DATASET, label="Dataset")
-            run_box = gr.Textbox(value=DEFAULT_RUN, label="Run name")
+            # run_box = gr.Textbox(value=DEFAULT_RUN, label="Run name")
+            run_box = gr.Dropdown(
+            choices=[
+                "mlp_pm_bce_countw05_enriched_256_128_64_d03_lr3e4_alltasks",
+                "mlp_count_twohead_params",
+                "mlp_count_bce_countw10_enriched_256_128_64_d03_lr3e4",
+            ],
+            value=DEFAULT_RUN,
+            label="Run name"
+            )
             predict_btn = gr.Button("Predict", variant="primary")
 
         with gr.Column(scale=2):

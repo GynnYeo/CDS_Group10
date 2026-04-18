@@ -1,0 +1,13 @@
+model_name,horizon,split,MAE,RMSE
+climatology_count,24h,train,10.2368,848.6073
+climatology_count,24h,val,9.6442,343.6866
+climatology_count,24h,test,14.7444,1147.0442
+xgboost_count,24h,train,4.2006,76.1478
+xgboost_count,24h,val,11.059,366.3004
+xgboost_count,24h,test,15.171,1028.7649
+climatology_count,72h,train,15.7506,1976.6541
+climatology_count,72h,val,13.9517,601.5895
+climatology_count,72h,test,22.563,2635.6073
+xgboost_count,72h,train,6.088,159.8678
+xgboost_count,72h,val,14.3923,663.2175
+xgboost_count,72h,test,22.035,2525.9712

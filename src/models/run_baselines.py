@@ -9,7 +9,11 @@ from src.evaluation.validation import (
     validate_binary_prediction_columns,
     validate_prediction_frame,
 )
-from src.models.baselines import ClimatologyBaseline, SimplifiedRJBaseline
+from src.models.baselines import (
+    ClimatologyBaseline,
+    MagnitudeBinnedBaseline,
+    SimplifiedRJBaseline,
+)
 from src.models.input_layer import EXPECTED_SPLITS, load_modeling_splits
 
 
@@ -127,11 +131,23 @@ def run_rj_baseline(
     return model, predictions, metrics
 
 
+def run_magnitude_binned_baseline(
+    dataset_name: str | None = None,
+    splits: dict[str, pd.DataFrame] | None = None,
+) -> tuple[MagnitudeBinnedBaseline, pd.DataFrame, pd.DataFrame]:
+    """Fit magnitude-binned climatology baseline on train and evaluate on train/val/test."""
+    modeling_splits = load_modeling_splits(dataset_name=dataset_name) if splits is None else splits
+    model = MagnitudeBinnedBaseline().fit(modeling_splits["train"])
+    predictions = collect_baseline_predictions(model=model, splits=modeling_splits)
+    metrics = evaluate_baseline_predictions(predictions)
+    return model, predictions, metrics
+
+
 def run_all_baselines(
     dataset_name: str | None = None,
     splits: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Run climatology and RJ-style baselines and return combined predictions and metrics."""
+    """Run all baseline models and return combined predictions and metrics."""
     modeling_splits = load_modeling_splits(dataset_name=dataset_name) if splits is None else splits
 
     _, climatology_predictions, climatology_metrics = run_climatology_baseline(
@@ -140,13 +156,16 @@ def run_all_baselines(
     _, rj_predictions, rj_metrics = run_rj_baseline(
         splits=modeling_splits
     )
+    _, magnitude_binned_predictions, magnitude_binned_metrics = run_magnitude_binned_baseline(
+        splits=modeling_splits
+    )
 
     predictions = pd.concat(
-        [climatology_predictions, rj_predictions],
+        [climatology_predictions, rj_predictions, magnitude_binned_predictions],
         ignore_index=True,
     )
     metrics = pd.concat(
-        [climatology_metrics, rj_metrics],
+        [climatology_metrics, rj_metrics, magnitude_binned_metrics],
         ignore_index=True,
     )
     metrics = metrics.sort_values(
