@@ -3,8 +3,11 @@ from __future__ import annotations
 import folium
 from folium.plugins import HeatMap
 
+import pandas as pd
+from src.models.input_layer import load_modeling_splits
 
-def build_prediction_map_html(prediction_df):
+
+def build_prediction_map_html(prediction_df, dataset_name="earthquake_aftershock_v2_gcmt"):
     if prediction_df.empty:
         return "<div>No predictions to plot.</div>"
 
@@ -17,7 +20,7 @@ def build_prediction_map_html(prediction_df):
 
     fmap = folium.Map(
         location=[center_lat, center_lon],
-        zoom_start=3,
+        zoom_start=4,
         control_scale=True,
         tiles="OpenStreetMap",
     )
@@ -43,6 +46,32 @@ def build_prediction_map_html(prediction_df):
 
         # Weighted by predicted 72h magnitude; with only 1-3 points, this acts like a glow.
         heat_data.append([row["latitude"], row["longitude"], max(row["mag_72h"], 0.0)])
+
+    # Historical earthquakes
+    try:
+        splits = load_modeling_splits(dataset_name="earthquake_aftershock_v2_gcmt")
+        hist_df = pd.concat([splits["train"], splits["val"], splits["test"]], ignore_index=True)
+        lat = points["latitude"].iloc[0]
+        lon = points["longitude"].iloc[0]
+        nearby = hist_df[
+            (hist_df["trigger_latitude"].between(lat - 5, lat + 5)) &
+            (hist_df["trigger_longitude"].between(lon - 5, lon + 5))
+        ].head(50)
+        for _, row in nearby.iterrows():
+            folium.CircleMarker(
+                location=[row["trigger_latitude"], row["trigger_longitude"]],
+                radius=4,
+                color="gray",
+                fill=True,
+                fill_color="gray",
+                fill_opacity=0.4,
+                popup=f"M{row['trigger_magnitude']:.1f} | {row['trigger_time']}",
+                tooltip=f"M{row['trigger_magnitude']:.1f}",
+            ).add_to(fmap)
+    except Exception:
+        pass
+
+
 
     if heat_data:
         HeatMap(
