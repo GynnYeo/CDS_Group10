@@ -119,6 +119,59 @@ GCMT_FEATURES = [
 # Modeling-stage-only neural feature set with optional GCMT enrichment.
 NN_ENRICHED_V1 = NN_CORE_V1 + GCMT_FEATURES
 
+# NN_ENRICHED_V2 — same as V1 plus the 35 engineered features developed for
+# Task 1 probability prediction (Member 1).  These are computed by calling
+# engineer_features() on the raw splits before passing them into the neural
+# data pipeline.  The feature names listed here must already exist as columns
+# in the engineered splits; they are not recomputed inside this file.
+NN_ENGINEERED_FEATURES = [
+    # Depth regime (binary flags)
+    "depth_shallow",
+    "depth_intermediate",
+    "depth_deep",
+    # Magnitude / activity transforms
+    "log_magnitude",
+    "mag_depth_ratio",
+    "log_prior_24h",
+    "log_prior_7d",
+    "seismicity_acceleration",
+    "mag_x_log_prior",
+    "mag_x_shallow",
+    # Temporal cyclical encodings
+    "sin_month",
+    "cos_month",
+    "sin_hour",
+    "cos_hour",
+    "sin_dayofyear",
+    "cos_dayofyear",
+    # Spatial
+    "ring_of_fire",
+    # GCMT moment-tensor derived features
+    "log_scalar_moment",
+    "moment_exponent_centered",
+    "gcmt_mw",
+    "mw_trigger_diff",
+    "sin_dip",
+    "clvd_fraction",
+    "eig_ratio",
+    "sin_eig1_plunge",
+    "cos_eig1_plunge",
+    "sin_eig3_plunge",
+    "cos_eig3_plunge",
+    "tp_plunge_diff",
+    "centroid_depth_diff",
+    "log_half_duration",
+    "mag_diff_abs",
+    # Tectonic regime flags
+    "is_strike_slip",
+    "is_reverse",
+    "is_normal",
+]
+
+# Full engineered feature set: raw GCMT enriched + all 35 derived features.
+# Use --feature-set nn_enriched_v2 on the CLI to activate this.
+NN_ENRICHED_V2 = NN_ENRICHED_V1 + NN_ENGINEERED_FEATURES
+
 EXTENDED_TABULAR_FEATURES = (
     BASE_TABULAR_FEATURES
     + QUALITY_FEATURES

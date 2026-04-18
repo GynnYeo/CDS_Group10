@@ -193,6 +193,24 @@ def parse_args() -> argparse.Namespace:
             "If omitted, the magnitude head remains the original linear head."
         ),
     )
+    parser.add_argument(
+        "--checkpoint-metric",
+        type=str,
+        default="val_total_loss",
+        choices=[
+            "val_total_loss",
+            "val_prob_loss",
+            "val_count_loss",
+            "val_magnitude_loss",
+        ],
+        help=(
+            "Validation metric used to select the best model checkpoint. "
+            "'val_total_loss' (default) preserves the original behaviour. "
+            "Use 'val_prob_loss' to select the checkpoint that is best for "
+            "the probability task specifically (recommended for Task 1). "
+            "Use 'val_magnitude_loss' for magnitude-focused runs."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -301,13 +319,36 @@ def main() -> None:
         last_checkpoint_path=run_paths.last_checkpoint_path,
         args_metadata=vars(args),
         feature_cols=prepared.feature_cols,
+        checkpoint_metric=args.checkpoint_metric,
+        # Per-task checkpoints — all four are saved in the same epoch loop
+        best_prob_checkpoint_path=run_paths.best_prob_checkpoint_path,
+        best_count_checkpoint_path=run_paths.best_count_checkpoint_path,
+        best_magnitude_checkpoint_path=run_paths.best_magnitude_checkpoint_path,
+        best_total_checkpoint_path=run_paths.best_total_checkpoint_path,
     )
 
-    best_checkpoint = torch.load(run_paths.best_checkpoint_path, map_location=device)
-    model.load_state_dict(best_checkpoint["model_state_dict"])
+    pd.DataFrame(history).to_csv(run_paths.history_path, index=False)
+    print(f"History saved to: {run_paths.history_path}")
 
-    probability_predictions, count_predictions, magnitude_predictions = (
-        collect_prediction_tables(
+    # ── Helper: load a checkpoint, generate predictions + metrics, save CSVs ──
+    def _save_task_outputs(
+        ckpt_path: Path | None,
+        task_label: str,
+        prob_out: Path,
+        count_out: Path,
+        mag_out: Path,
+        prob_metrics_out: Path,
+        count_metrics_out: Path,
+        count_capped_out: Path,
+        mag_metrics_out: Path,
+    ) -> None:
+        """Load one checkpoint and write all prediction + metric CSVs for it."""
+        if ckpt_path is None or not ckpt_path.exists():
+            print(f"  [{task_label}] checkpoint not found — skipping.")
+            return
+        ckpt = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        prob_preds, count_preds, mag_preds = collect_prediction_tables(
             model=model,
             prepared=prepared,
             feature_tensors=feature_tensors,
@@ -316,36 +357,85 @@ def main() -> None:
             model_name=args.run_name,
             count_modeling_mode=args.count_modeling_mode,
         )
-    )
-    probability_metrics = compute_probability_metrics(probability_predictions)
-    count_metrics = compute_count_metrics(count_predictions)
-    count_capped_metrics = compute_capped_count_metrics(count_predictions)
-    magnitude_metrics = compute_magnitude_metrics(magnitude_predictions)
+        prob_preds.to_csv(prob_out, index=False)
+        count_preds.to_csv(count_out, index=False)
+        mag_preds.to_csv(mag_out, index=False)
+        compute_probability_metrics(prob_preds).to_csv(prob_metrics_out, index=False)
+        compute_count_metrics(count_preds).to_csv(count_metrics_out, index=False)
+        compute_capped_count_metrics(count_preds).to_csv(count_capped_out, index=False)
+        compute_magnitude_metrics(mag_preds).to_csv(mag_metrics_out, index=False)
+        print(f"  [{task_label}] outputs saved  (ckpt epoch={ckpt.get('epoch', '?')})")
 
-    pd.DataFrame(history).to_csv(run_paths.history_path, index=False)
-    probability_predictions.to_csv(run_paths.probability_predictions_path, index=False)
-    count_predictions.to_csv(run_paths.count_predictions_path, index=False)
-    magnitude_predictions.to_csv(run_paths.magnitude_predictions_path, index=False)
-    probability_metrics.to_csv(run_paths.probability_metrics_path, index=False)
-    count_metrics.to_csv(run_paths.count_metrics_path, index=False)
-    count_capped_metrics.to_csv(run_paths.count_capped_metrics_path, index=False)
-    magnitude_metrics.to_csv(run_paths.magnitude_metrics_path, index=False)
+    out = run_paths.output_dir
+    rn  = run_paths.run_name
+
+    # ── Task 1: probability-best checkpoint ───────────────────────────────────
+    print("\n── Task 1 (probability) — loading best_prob checkpoint ──")
+    _save_task_outputs(
+        ckpt_path=run_paths.best_prob_checkpoint_path,
+        task_label="prob",
+        prob_out=out / f"{rn}_probability_predictions.csv",
+        count_out=out / f"{rn}_count_predictions_from_prob_ckpt.csv",
+        mag_out=out / f"{rn}_magnitude_predictions_from_prob_ckpt.csv",
+        prob_metrics_out=out / f"{rn}_probability_metrics.csv",
+        count_metrics_out=out / f"{rn}_count_metrics_from_prob_ckpt.csv",
+        count_capped_out=out / f"{rn}_count_capped_metrics_from_prob_ckpt.csv",
+        mag_metrics_out=out / f"{rn}_magnitude_metrics_from_prob_ckpt.csv",
+    )
+
+    # ── Task 2: count-best checkpoint ─────────────────────────────────────────
+    print("\n── Task 2 (count) — loading best_count checkpoint ──")
+    _save_task_outputs(
+        ckpt_path=run_paths.best_count_checkpoint_path,
+        task_label="count",
+        prob_out=out / f"{rn}_probability_predictions_from_count_ckpt.csv",
+        count_out=out / f"{rn}_count_predictions.csv",
+        mag_out=out / f"{rn}_magnitude_predictions_from_count_ckpt.csv",
+        prob_metrics_out=out / f"{rn}_probability_metrics_from_count_ckpt.csv",
+        count_metrics_out=out / f"{rn}_count_metrics.csv",
+        count_capped_out=out / f"{rn}_count_capped_metrics.csv",
+        mag_metrics_out=out / f"{rn}_magnitude_metrics_from_count_ckpt.csv",
+    )
+
+    # ── Task 3: magnitude-best checkpoint ────────────────────────────────────
+    print("\n── Task 3 (magnitude) — loading best_magnitude checkpoint ──")
+    _save_task_outputs(
+        ckpt_path=run_paths.best_magnitude_checkpoint_path,
+        task_label="magnitude",
+        prob_out=out / f"{rn}_probability_predictions_from_mag_ckpt.csv",
+        count_out=out / f"{rn}_count_predictions_from_mag_ckpt.csv",
+        mag_out=out / f"{rn}_magnitude_predictions.csv",
+        prob_metrics_out=out / f"{rn}_probability_metrics_from_mag_ckpt.csv",
+        count_metrics_out=out / f"{rn}_count_metrics_from_mag_ckpt.csv",
+        count_capped_out=out / f"{rn}_count_capped_metrics_from_mag_ckpt.csv",
+        mag_metrics_out=out / f"{rn}_magnitude_metrics.csv",
+    )
+
+    # ── Optional: total-loss checkpoint (matches old default behaviour) ───────
+    if run_paths.best_total_checkpoint_path is not None:
+        print("\n── Total-loss checkpoint (optional) ──")
+        _save_task_outputs(
+            ckpt_path=run_paths.best_total_checkpoint_path,
+            task_label="total",
+            prob_out=out / f"{rn}_probability_predictions_from_total_ckpt.csv",
+            count_out=out / f"{rn}_count_predictions_from_total_ckpt.csv",
+            mag_out=out / f"{rn}_magnitude_predictions_from_total_ckpt.csv",
+            prob_metrics_out=out / f"{rn}_probability_metrics_from_total_ckpt.csv",
+            count_metrics_out=out / f"{rn}_count_metrics_from_total_ckpt.csv",
+            count_capped_out=out / f"{rn}_count_capped_metrics_from_total_ckpt.csv",
+            mag_metrics_out=out / f"{rn}_magnitude_metrics_from_total_ckpt.csv",
+        )
 
     total_seconds = time.perf_counter() - run_start
-    print(f"Total epochs: {args.epochs}")
-    print(f"Best epoch: {best_epoch}")
-    print(f"Best validation loss: {best_val_loss:.4f}")
-    print(f"Total training time: {total_seconds:.2f}s")
-    print(f"History saved to: {run_paths.history_path}")
-    print(f"Probability predictions saved to: {run_paths.probability_predictions_path}")
-    print(f"Count predictions saved to: {run_paths.count_predictions_path}")
-    print(f"Count metrics saved to: {run_paths.count_metrics_path}")
-    print(f"Capped Count metrics saved to: {run_paths.count_capped_metrics_path}")
-    print(f"Magnitude predictions saved to: {run_paths.magnitude_predictions_path}")
-    print(f"Magnitude metrics saved to: {run_paths.magnitude_metrics_path}")
-    print(f"Probability metrics saved to: {run_paths.probability_metrics_path}")
-    print(f"Best checkpoint saved to: {run_paths.best_checkpoint_path}")
-    print(f"Last checkpoint saved to: {run_paths.last_checkpoint_path}")
+    print(f"\nTotal epochs        : {args.epochs}")
+    print(f"Best epoch (legacy) : {best_epoch}")
+    print(f"Best val loss       : {best_val_loss:.4f}")
+    print(f"Total training time : {total_seconds:.2f}s")
+    print(f"Best prob ckpt      : {run_paths.best_prob_checkpoint_path}")
+    print(f"Best count ckpt     : {run_paths.best_count_checkpoint_path}")
+    print(f"Best magnitude ckpt : {run_paths.best_magnitude_checkpoint_path}")
+    print(f"Last checkpoint     : {run_paths.last_checkpoint_path}")
+
 
 
 if __name__ == "__main__":

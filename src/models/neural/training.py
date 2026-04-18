@@ -205,6 +205,22 @@ def save_checkpoint(
     torch.save(checkpoint, checkpoint_path)
 
 
+CHECKPOINT_METRIC_OPTIONS = {
+    "val_total_loss",
+    "val_prob_loss",
+    "val_count_loss",
+    "val_magnitude_loss",
+}
+
+# Maps each task metric to a human-readable label for logging
+_METRIC_LABELS = {
+    "val_prob_loss":      "prob",
+    "val_count_loss":     "count",
+    "val_magnitude_loss": "magnitude",
+    "val_total_loss":     "total",
+}
+
+
 def train_model(
     model: nn.Module,
     loaders: dict[str, DataLoader],
@@ -218,12 +234,73 @@ def train_model(
     last_checkpoint_path: Path,
     args_metadata: dict[str, Any],
     feature_cols: list[str],
+    checkpoint_metric: str = "val_total_loss",
+    # Per-task checkpoint paths — if provided, each task gets its own best checkpoint
+    best_prob_checkpoint_path: Path | None = None,
+    best_count_checkpoint_path: Path | None = None,
+    best_magnitude_checkpoint_path: Path | None = None,
+    best_total_checkpoint_path: Path | None = None,
 ) -> tuple[list[dict[str, float | int]], float, int]:
-    """Train the model, save best/last checkpoints, and return history."""
+    """Train the model and save per-task best checkpoints in ONE training run.
+
+    Four checkpoints can be saved simultaneously during the same epoch loop:
+
+    * ``best_prob_checkpoint_path``      — epoch with lowest ``val_prob_loss``
+    * ``best_count_checkpoint_path``     — epoch with lowest ``val_count_loss``
+    * ``best_magnitude_checkpoint_path`` — epoch with lowest ``val_magnitude_loss``
+    * ``best_total_checkpoint_path``     — epoch with lowest ``val_total_loss``
+
+    The legacy ``best_checkpoint_path`` is still saved using ``checkpoint_metric``
+    (default ``val_total_loss``) for full backward compatibility.
+
+    Only paths that are not ``None`` are written to disk.
+    """
+
+    if checkpoint_metric not in CHECKPOINT_METRIC_OPTIONS:
+        raise ValueError(
+            f"checkpoint_metric must be one of {sorted(CHECKPOINT_METRIC_OPTIONS)}, "
+            f"got {checkpoint_metric!r}."
+        )
 
     history: list[dict[str, float | int]] = []
+
+    # Track best value and best epoch independently for each task
+    task_trackers: dict[str, dict] = {
+        "val_prob_loss": {
+            "best": float("inf"),
+            "best_epoch": 0,
+            "path": best_prob_checkpoint_path,
+            "label": "prob",
+        },
+        "val_count_loss": {
+            "best": float("inf"),
+            "best_epoch": 0,
+            "path": best_count_checkpoint_path,
+            "label": "count",
+        },
+        "val_magnitude_loss": {
+            "best": float("inf"),
+            "best_epoch": 0,
+            "path": best_magnitude_checkpoint_path,
+            "label": "magnitude",
+        },
+        "val_total_loss": {
+            "best": float("inf"),
+            "best_epoch": 0,
+            "path": best_total_checkpoint_path,
+            "label": "total",
+        },
+    }
+
+    # Legacy single best checkpoint (uses checkpoint_metric)
     best_val_loss = float("inf")
     best_epoch = 0
+
+    print(f"Legacy checkpoint metric  : {checkpoint_metric}")
+    print(f"Per-task checkpoints saved: "
+          + ", ".join(
+              m for m, t in task_trackers.items() if t["path"] is not None
+          ))
 
     for epoch in range(1, training_config.epochs + 1):
         epoch_start = time.perf_counter()
@@ -264,8 +341,28 @@ def train_model(
         }
         history.append(epoch_record)
 
-        if val_metrics["val_total_loss"] < best_val_loss:
-            best_val_loss = val_metrics["val_total_loss"]
+        # ── Save per-task checkpoints ─────────────────────────────────────
+        for metric_key, tracker in task_trackers.items():
+            if tracker["path"] is None:
+                continue  # path not configured — skip
+            current = val_metrics[metric_key]
+            if current < tracker["best"]:
+                tracker["best"] = current
+                tracker["best_epoch"] = epoch
+                save_checkpoint(
+                    checkpoint_path=tracker["path"],
+                    model=model,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    validation_loss=current,
+                    feature_cols=feature_cols,
+                    args_metadata=args_metadata,
+                    training_config=training_config,
+                )
+
+        # ── Legacy single best checkpoint ─────────────────────────────────
+        if val_metrics[checkpoint_metric] < best_val_loss:
+            best_val_loss = val_metrics[checkpoint_metric]
             best_epoch = epoch
             save_checkpoint(
                 checkpoint_path=best_checkpoint_path,
@@ -302,4 +399,14 @@ def train_model(
         args_metadata=args_metadata,
         training_config=training_config,
     )
+
+    # Log where each per-task best was found
+    for metric_key, tracker in task_trackers.items():
+        if tracker["path"] is not None:
+            print(
+                f"Best {tracker['label']:10s} checkpoint : "
+                f"epoch {tracker['best_epoch']:3d}  "
+                f"({metric_key}={tracker['best']:.4f})"
+            )
+
     return history, best_val_loss, best_epoch
