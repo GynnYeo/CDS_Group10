@@ -1,0 +1,16 @@
+{
+  "trigger_event_id": "us6000fw20",
+  "trigger_time": "2021-10-20 06:38:30.480000+00:00",
+  "latitude": -11.9366,
+  "longitude": 166.799,
+  "depth_km": 210.72,
+  "magnitude": 5.2,
+  "trigger_month": 10,
+  "trigger_dayofyear": 293,
+  "trigger_hour": 6,
+  "trigger_year_feature": 2021,
+  "gap": 30.0,
+  "dmin": 3.511,
+  "rms": 0.82,
+  "nst": NaN
+}
