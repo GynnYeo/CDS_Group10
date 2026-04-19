@@ -36,8 +36,15 @@ def merge_task3_maxmag_labels_into_splits(
     label_df: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     merged_splits: dict[str, pd.DataFrame] = {}
+    label_cols = [column for column in label_df.columns if column != "trigger_event_id"]
     for split_name, split_df in splits.items():
-        merged_splits[split_name] = split_df.merge(label_df, how="left", on="trigger_event_id")
+        missing_label_cols = [column for column in label_cols if column not in split_df.columns]
+        if missing_label_cols:
+            merge_cols = ["trigger_event_id", *missing_label_cols]
+            merged_df = split_df.merge(label_df.loc[:, merge_cols], how="left", on="trigger_event_id")
+        else:
+            merged_df = split_df.copy()
+        merged_splits[split_name] = merged_df
     return merged_splits
 
 
@@ -135,6 +142,15 @@ def run_task3_maxmag_pipeline(
     feature_cols: list[str] | None = None,
     feature_set: str = "extended",
     backend: str = "auto",
+    tabnet_max_epochs: int | None = None,
+    tabnet_patience: int = 20,
+    tabnet_batch_size: int = 1024,
+    tabnet_virtual_batch_size: int = 128,
+    tabnet_lr: float = 0.02,
+    tabnet_n_d: int = 8,
+    tabnet_n_a: int = 8,
+    tabnet_n_steps: int = 3,
+    tabnet_gamma: float = 1.3,
     tune_xgboost: bool = False,
     early_stopping_rounds: int | None = None,
     force_recompute_labels: bool = False,
@@ -185,6 +201,15 @@ def run_task3_maxmag_pipeline(
         for variant_backend, variant_tune in model_variants:
             model = Task3MaxMagRegressor(
                 backend=variant_backend,
+                tabnet_max_epochs=tabnet_max_epochs,
+                tabnet_patience=tabnet_patience,
+                tabnet_batch_size=tabnet_batch_size,
+                tabnet_virtual_batch_size=tabnet_virtual_batch_size,
+                tabnet_lr=tabnet_lr,
+                tabnet_n_d=tabnet_n_d,
+                tabnet_n_a=tabnet_n_a,
+                tabnet_n_steps=tabnet_n_steps,
+                tabnet_gamma=tabnet_gamma,
                 tune=variant_tune,
                 early_stopping_rounds=early_stopping_rounds,
             ).fit(

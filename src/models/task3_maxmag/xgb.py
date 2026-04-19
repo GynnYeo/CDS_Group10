@@ -17,11 +17,20 @@ def _xgboost_available() -> bool:
     return True
 
 
+def _tabnet_available() -> bool:
+    try:
+        import pytorch_tabnet  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 @dataclass(slots=True)
 class Task3MaxMagRegressor:
     backend: str = "auto"
     random_state: int = 42
     max_iter: int = 300
+    tabnet_max_epochs: int | None = None
     learning_rate: float = 0.03
     max_depth: int = 3
     min_child_weight: float = 3.0
@@ -31,6 +40,14 @@ class Task3MaxMagRegressor:
     reg_alpha: float = 0.5
     tune: bool = False
     early_stopping_rounds: int | None = None
+    tabnet_patience: int = 20
+    tabnet_batch_size: int = 1024
+    tabnet_virtual_batch_size: int = 128
+    tabnet_lr: float = 0.02
+    tabnet_n_d: int = 8
+    tabnet_n_a: int = 8
+    tabnet_n_steps: int = 3
+    tabnet_gamma: float = 1.3
     model_: Any = None
     backend_: str | None = None
     best_params_: dict[str, float | int] | None = None
@@ -46,6 +63,8 @@ class Task3MaxMagRegressor:
         backend = self._resolve_backend()
         if backend == "xgboost":
             self.model_ = self._fit_xgboost(X_train, y_train, X_val, y_val)
+        elif backend == "tabnet":
+            self.model_ = self._fit_tabnet(X_train, y_train, X_val, y_val)
         else:
             self.model_ = self._fit_gradient_boosting(X_train, y_train)
         self.backend_ = backend
@@ -54,15 +73,24 @@ class Task3MaxMagRegressor:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         if self.model_ is None:
             raise ValueError("Task3MaxMagRegressor must be fit before prediction.")
-        return np.asarray(self.model_.predict(X), dtype=float)
+        X_input: pd.DataFrame | np.ndarray = X
+        if self.backend_ == "tabnet":
+            X_input = X.to_numpy(dtype=np.float32)
+        return np.asarray(self.model_.predict(X_input), dtype=float).ravel()
 
     def _resolve_backend(self) -> str:
         if self.backend == "auto":
-            return "xgboost" if _xgboost_available() else "gb_reg"
-        if self.backend not in {"xgboost", "gb_reg"}:
-            raise ValueError("backend must be one of: 'auto', 'xgboost', 'gb_reg'.")
+            if _xgboost_available():
+                return "xgboost"
+            if _tabnet_available():
+                return "tabnet"
+            return "gb_reg"
+        if self.backend not in {"xgboost", "gb_reg", "tabnet"}:
+            raise ValueError("backend must be one of: 'auto', 'xgboost', 'gb_reg', 'tabnet'.")
         if self.backend == "xgboost" and not _xgboost_available():
             raise ImportError("xgboost is not installed in this environment.")
+        if self.backend == "tabnet" and not _tabnet_available():
+            raise ImportError("pytorch-tabnet is not installed in this environment.")
         return self.backend
 
     def _fit_xgboost(
@@ -87,6 +115,62 @@ class Task3MaxMagRegressor:
         self.best_params_ = params
         if X_val is not None and y_val is not None:
             self.best_val_metrics_ = self._evaluate_regression(y_val, model.predict(X_val))
+        return model
+
+    def _fit_tabnet(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame | None,
+        y_val: pd.Series | None,
+    ) -> Any:
+        from pytorch_tabnet.tab_model import TabNetRegressor
+
+        model = TabNetRegressor(
+            n_d=self.tabnet_n_d,
+            n_a=self.tabnet_n_a,
+            n_steps=self.tabnet_n_steps,
+            gamma=self.tabnet_gamma,
+            optimizer_params={"lr": self.tabnet_lr},
+            seed=self.random_state,
+            verbose=0,
+        )
+        fit_kwargs: dict[str, Any] = {
+            "X_train": X_train.to_numpy(dtype=np.float32),
+            "y_train": y_train.to_numpy(dtype=np.float32).reshape(-1, 1),
+            "max_epochs": self.tabnet_max_epochs or self.max_iter,
+            "patience": self.tabnet_patience,
+            "batch_size": self.tabnet_batch_size,
+            "virtual_batch_size": self.tabnet_virtual_batch_size,
+            "num_workers": 0,
+            "drop_last": False,
+        }
+        if X_val is not None and y_val is not None:
+            fit_kwargs["eval_set"] = [
+                (
+                    X_val.to_numpy(dtype=np.float32),
+                    y_val.to_numpy(dtype=np.float32).reshape(-1, 1),
+                )
+            ]
+            fit_kwargs["eval_name"] = ["val"]
+            fit_kwargs["eval_metric"] = ["rmse"]
+        model.fit(**fit_kwargs)
+        self.best_params_ = {
+            "backend": "tabnet",
+            "max_epochs": self.tabnet_max_epochs or self.max_iter,
+            "patience": self.tabnet_patience,
+            "batch_size": self.tabnet_batch_size,
+            "virtual_batch_size": self.tabnet_virtual_batch_size,
+            "lr": self.tabnet_lr,
+            "n_d": self.tabnet_n_d,
+            "n_a": self.tabnet_n_a,
+            "n_steps": self.tabnet_n_steps,
+            "gamma": self.tabnet_gamma,
+            "seed": self.random_state,
+        }
+        if X_val is not None and y_val is not None:
+            val_pred = model.predict(X_val.to_numpy(dtype=np.float32)).ravel()
+            self.best_val_metrics_ = self._evaluate_regression(y_val, val_pred)
         return model
 
     def _fit_tuned_xgboost(

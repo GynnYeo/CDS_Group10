@@ -42,8 +42,14 @@ def merge_task3_labels_into_splits(
     label_df: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     merged_splits: dict[str, pd.DataFrame] = {}
+    label_cols = [column for column in label_df.columns if column != "trigger_event_id"]
     for split_name, split_df in splits.items():
-        merged_df = split_df.merge(label_df, how="left", on="trigger_event_id")
+        missing_label_cols = [column for column in label_cols if column not in split_df.columns]
+        if missing_label_cols:
+            merge_cols = ["trigger_event_id", *missing_label_cols]
+            merged_df = split_df.merge(label_df.loc[:, merge_cols], how="left", on="trigger_event_id")
+        else:
+            merged_df = split_df.copy()
         missing_targets = merged_df[["y_large_24h", "y_large_72h"]].isna().any(axis=1)
         if missing_targets.any():
             raise ValueError(
@@ -176,6 +182,15 @@ def run_task3_pipeline(
     magnitude_threshold: float = 4.0,
     feature_cols: list[str] | None = None,
     backend: str = "auto",
+    tabnet_max_epochs: int | None = None,
+    tabnet_patience: int = 20,
+    tabnet_batch_size: int = 1024,
+    tabnet_virtual_batch_size: int = 128,
+    tabnet_lr: float = 0.02,
+    tabnet_n_d: int = 8,
+    tabnet_n_a: int = 8,
+    tabnet_n_steps: int = 3,
+    tabnet_gamma: float = 1.3,
     force_recompute_labels: bool = False,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -208,7 +223,18 @@ def run_task3_pipeline(
             allow_missing_optional=True,
         )
         prepared = prepare_tabular_inputs(config=config, splits=merged_splits)
-        model = Task3BinaryModel(backend=backend).fit(
+        model = Task3BinaryModel(
+            backend=backend,
+            tabnet_max_epochs=tabnet_max_epochs,
+            tabnet_patience=tabnet_patience,
+            tabnet_batch_size=tabnet_batch_size,
+            tabnet_virtual_batch_size=tabnet_virtual_batch_size,
+            tabnet_lr=tabnet_lr,
+            tabnet_n_d=tabnet_n_d,
+            tabnet_n_a=tabnet_n_a,
+            tabnet_n_steps=tabnet_n_steps,
+            tabnet_gamma=tabnet_gamma,
+        ).fit(
             prepared.X_train,
             prepared.y_train,
             X_val=prepared.X_val,
