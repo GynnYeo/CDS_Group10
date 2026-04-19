@@ -1,7 +1,7 @@
 model_name,horizon,split,MAE,RMSE
-dl_twostage_soft_expanded_retuned,24h,train,5.8397,23.3422
-dl_twostage_soft_expanded_retuned,24h,val,12.8767,41.7138
-dl_twostage_soft_expanded_retuned,24h,test,9.2987,27.9507
-dl_twostage_soft_expanded_retuned,72h,train,9.4678,38.7464
-dl_twostage_soft_expanded_retuned,72h,val,19.5896,61.73
-dl_twostage_soft_expanded_retuned,72h,test,13.6645,41.8442
+dl_twostage_soft_expanded_retuned,24h,train,6.1436,24.4511
+dl_twostage_soft_expanded_retuned,24h,val,12.7796,41.3066
+dl_twostage_soft_expanded_retuned,24h,test,8.756,26.998
+dl_twostage_soft_expanded_retuned,72h,train,9.6312,39.4442
+dl_twostage_soft_expanded_retuned,72h,val,19.611,61.5164
+dl_twostage_soft_expanded_retuned,72h,test,13.1571,40.769

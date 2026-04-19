@@ -1,3 +1,3 @@
 horizon,xgb_model,xgb_MAE,xgb_RMSE,headnn_model,headnn_MAE,headnn_RMSE,zinb_model,zinb_MAE,zinb_RMSE
-24h,xgboost_twostage_soft,8.7249,26.8881,dl_twostage_soft_expanded_retuned,9.2987,27.9507,zinb_gpu,9.3136,26.2663
-72h,xgboost_twostage_soft,13.2413,40.7977,dl_twostage_soft_expanded_retuned,13.6645,41.8442,zinb_gpu,14.2374,40.1164
+24h,xgboost_twostage_soft,8.7699,26.8542,dl_twostage_soft_expanded_retuned,9.2987,27.9507,zinb_gpu,9.3136,26.2663
+72h,xgboost_twostage_soft,13.3838,40.7653,dl_twostage_soft_expanded_retuned,13.6645,41.8442,zinb_gpu,14.2374,40.1164

@@ -1,7 +1,7 @@
 model_name,horizon,split,MAE,RMSE
-zinb_gpu,24h,train,6.6595,23.4403
-zinb_gpu,24h,val,13.0185,40.3413
-zinb_gpu,24h,test,9.3136,26.2663
-zinb_gpu,72h,train,10.7645,38.6339
-zinb_gpu,72h,val,20.2018,60.2472
-zinb_gpu,72h,test,14.2374,40.1164
+zinb_gpu,24h,train,6.2189,22.7778
+zinb_gpu,24h,val,12.8762,40.5236
+zinb_gpu,24h,test,8.9166,25.4648
+zinb_gpu,72h,train,10.0423,37.4976
+zinb_gpu,72h,val,19.8359,60.3102
+zinb_gpu,72h,test,13.6412,39.3165
