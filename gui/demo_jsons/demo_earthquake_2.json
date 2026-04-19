@@ -1,0 +1,16 @@
+{
+  "trigger_event_id": "us1000ceuw",
+  "trigger_time": "2018-02-02 23:30:02.170000+00:00",
+  "latitude": -41.7222,
+  "longitude": 85.0933,
+  "depth_km": 10.0,
+  "magnitude": 5.1,
+  "trigger_month": 2,
+  "trigger_dayofyear": 33,
+  "trigger_hour": 23,
+  "trigger_year_feature": 2018,
+  "gap": 39.0,
+  "dmin": 6.996,
+  "rms": 1.12,
+  "nst": NaN
+}

@@ -1,0 +1,16 @@
+{
+  "trigger_event_id": "us6000iv32",
+  "trigger_time": "2022-10-20 06:12:20.693000+00:00",
+  "latitude": -3.8259,
+  "longitude": -103.6223,
+  "depth_km": 10.0,
+  "magnitude": 5.4,
+  "trigger_month": 10,
+  "trigger_dayofyear": 293,
+  "trigger_hour": 6,
+  "trigger_year_feature": 2022,
+  "gap": 154.0,
+  "dmin": 13.078,
+  "rms": 0.5,
+  "nst": 91.0
+}

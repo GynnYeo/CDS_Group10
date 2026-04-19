@@ -208,5 +208,6 @@ __marimo__/
 
 
 /data
-/docs
+/docs/codex
+/docs/private
 .DS_Store

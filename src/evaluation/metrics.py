@@ -56,6 +56,38 @@ def evaluate_count_predictions(
         "mean_pred": float(np.mean(y_pred_arr)),
     }
 
+def evaluate_capped_count_predictions(
+    y_true: pd.Series | np.ndarray | list[float],
+    y_pred: pd.Series | np.ndarray | list[float],
+    cap: float,
+) -> dict[str, float]:
+    """Evaluate count predictions after clipping true and predicted counts at cap."""
+    if cap <= 0:
+        raise ValueError("cap must be positive.")
+
+    y_true_arr = _as_numpy(y_true).astype(float)
+    y_pred_arr = _as_numpy(y_pred).astype(float)
+
+    y_true_capped = np.minimum(y_true_arr, cap)
+    y_pred_capped = np.minimum(y_pred_arr, cap)
+
+    true_above_cap = y_true_arr >= cap
+    pred_above_cap = y_pred_arr >= cap
+
+    return {
+        "capped_mae": float(mean_absolute_error(y_true_capped, y_pred_capped)),
+        "capped_rmse": float(np.sqrt(mean_squared_error(y_true_capped, y_pred_capped))),
+        "n_obs": int(len(y_true_arr)),
+        "count_cap": float(cap),
+        "mean_true_capped": float(np.mean(y_true_capped)),
+        "mean_pred_capped": float(np.mean(y_pred_capped)),
+        "n_true_at_or_above_cap": int(np.sum(true_above_cap)),
+        "n_pred_at_or_above_cap": int(np.sum(pred_above_cap)),
+        "n_correct_at_or_above_cap": int(np.sum(true_above_cap & pred_above_cap)),
+        "n_missed_at_or_above_cap": int(np.sum(true_above_cap & ~pred_above_cap)),
+        "n_false_alarm_at_or_above_cap": int(np.sum(~true_above_cap & pred_above_cap)),
+    }
+
 
 def evaluate_prediction_table(
     prediction_df: pd.DataFrame,

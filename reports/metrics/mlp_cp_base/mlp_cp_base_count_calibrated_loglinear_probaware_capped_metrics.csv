@@ -1,0 +1,7 @@
+model_name,split,horizon,capped_mae,capped_rmse,n_obs,count_cap,mean_true_capped,mean_pred_capped,n_true_at_or_above_cap,n_pred_at_or_above_cap,n_correct_at_or_above_cap,n_missed_at_or_above_cap,n_false_alarm_at_or_above_cap
+mlp_cp_base_calibrated_loglinear_probaware,train,24,5.6623252689193,17.041501833408972,23031,300.0,6.497459945291129,5.7287618257035104,19,0,0,19,0
+mlp_cp_base_calibrated_loglinear_probaware,val,24,13.049786393670354,41.80182491362844,1744,300.0,13.459288990825687,3.1509755453037016,0,0,0,0,0
+mlp_cp_base_calibrated_loglinear_probaware,test,24,9.184436287003953,26.117222256612425,3513,300.0,9.506120125249074,3.1050261352452546,6,0,0,6,0
+mlp_cp_base_calibrated_loglinear_probaware,train,72,8.706594598347568,28.150329758496987,23031,500.0,10.546741348617081,7.799560675922883,18,0,0,18,0
+mlp_cp_base_calibrated_loglinear_probaware,val,72,19.939807722383424,61.95383563650521,1744,500.0,20.534977064220183,4.314569336815872,0,0,0,0,0
+mlp_cp_base_calibrated_loglinear_probaware,test,72,13.774309240091387,39.82971209029465,3513,500.0,14.311699402220324,4.254357928080233,5,0,0,5,0

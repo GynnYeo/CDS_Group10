@@ -1,0 +1,16 @@
+{
+  "trigger_event_id": "us6000d74p",
+  "trigger_time": "2021-01-10 03:54:14.483000+00:00",
+  "latitude": -24.0412,
+  "longitude": -66.5729,
+  "depth_km": 217.0,
+  "magnitude": 6.1,
+  "trigger_month": 1,
+  "trigger_dayofyear": 10,
+  "trigger_hour": 3,
+  "trigger_year_feature": 2021,
+  "gap": 36.0,
+  "dmin": 1.83,
+  "rms": 1.06,
+  "nst": NaN
+}
