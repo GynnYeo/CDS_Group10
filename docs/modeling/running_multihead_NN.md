@@ -1,5 +1,7 @@
 # Running the Multi-Task Neural Network (MLP)
 
+
+
 This guide explains how to train and evaluate the refactored multi-task neural network for earthquake aftershock forecasting.
 
 The current MLP predicts three target families for 24h and 72h horizons:
@@ -12,6 +14,18 @@ The pipeline now supports two workflows:
 
 1. full training + evaluation
 2. evaluation-only from saved prediction CSVs
+
+---
+
+## Overview
+
+This document describes the multi-task neural network used to jointly predict:
+
+- aftershock probability
+- aftershock count
+- maximum aftershock magnitude
+
+This model complements task-specific models by learning a shared representation across tasks.
 
 ---
 
@@ -992,3 +1006,12 @@ After training and basic evaluation, the most useful next analyses are:
 * comparison against traditional baselines under both uncapped and capped count metrics
 * probability calibration analysis
 * learning-curve plots from the history CSV
+
+## 12. When to Use This Model
+
+- useful for joint modeling across tasks
+- useful for exploring shared representations
+
+However:
+- does not outperform task-specific models (e.g. XGBoost)
+- count prediction remains challenging

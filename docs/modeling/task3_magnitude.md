@@ -1,5 +1,16 @@
 # Task 3 README
 
+## Role in Overall Project
+
+Task 3 focuses on **aftershock severity**, extending beyond:
+
+- Task 1: occurrence (whether aftershock happens)
+- Task 2: count (how many aftershocks)
+
+It answers:
+- how strong will the aftershock be?
+- will there be a large aftershock?
+
 ## Overview
 
 Task 3 focuses on **aftershock severity modelling** and extends the earlier project tasks beyond:
@@ -150,3 +161,10 @@ Current best final models:
 Detailed experimental analysis, tuning notes, and final result discussion are documented in:
 
 - `report.md`
+
+
+## Key Findings
+
+- XGBoost performs best across both Task 3a and 3b
+- Predicting large aftershocks is significantly harder due to rarity
+- Magnitude regression is more stable than rare-event classification
